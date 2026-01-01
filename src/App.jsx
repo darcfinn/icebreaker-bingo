@@ -1,24 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import { Shuffle, Globe, Users, Copy, Check, Trophy, User } from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 
-// Firebase configuration - REPLACE WITH YOUR CONFIG FROM FIREBASE CONSOLE
-
+// Firebase configuration from environment variables
 const firebaseConfig = {
-  apiKey: "AIzaSyDNDryo1trXwkaQsFqMDQy7DkJxZuKXfBc",
-  authDomain: "icebreaker-bingo-91a9c.firebaseapp.com",
-  projectId: "icebreaker-bingo-91a9c",
-  storageBucket: "icebreaker-bingo-91a9c.firebasestorage.app",
-  messagingSenderId: "669185422322",
-  appId: "1:669185422322:web:cfc4e11f13cdae1b18b16b",
-  measurementId: "G-4KWXE85SQ8"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDNDryo1trXwkaQsFqMDQy7DkJxZuKXfBc",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "icebreaker-bingo-91a9c.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "icebreaker-bingo-91a9c",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "icebreaker-bingo-91a9c.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "669185422322",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:669185422322:web:cfc4e11f13cdae1b18b16b"
 };
 
-// Simple Firebase wrapper (we'll use Firebase SDK via CDN in HTML)
-let db = null;
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// DIAGNOSTIC LOGGING
+console.log('🔥 Firebase initialized:', {
+  app: app.name,
+  authConfigured: !!auth,
+  dbConfigured: !!db,
+  projectId: firebaseConfig.projectId
+});
 
 const IcebreakerBingo = () => {
   const [view, setView] = useState('menu');
   const [language, setLanguage] = useState('en');
+  const [currentUser, setCurrentUser] = useState(null);
   const [currentGameId, setCurrentGameId] = useState(null);
   const [currentGame, setCurrentGame] = useState(null);
   const [playerName, setPlayerName] = useState('');
@@ -29,6 +41,7 @@ const IcebreakerBingo = () => {
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const statements = {
     en: [
@@ -72,56 +85,54 @@ const IcebreakerBingo = () => {
       "Prefers tea over coffee",
       "Has a collection hobby",
       "Loves board games",
-	  "Has baked at home",
-	"Can ride a bike with no hands",
-	"Has seen the northern lights",
-	"Loves pizza",
-	"Can whistle a tune",
-	"Has been to the cabin this summer",
-	"Likes to draw or paint",
-	"Has the same favorite movie as you",
-	"Can do a cartwheel",
-	"Has picked berries in the forest",
-	"Loves to swim",
-	"Has built a snowman this year",
-	"Likes to play video games",
-	"Can do a handstand",
-	"Has been on a cruise",
-	"Loves ice cream",
-	"Has the same number of siblings as you",
-	"Likes to dance",
-	"Has been to an amusement park",
-	"Can play cards",
-	"Has gone camping",
-	"Loves to sleep in",
-	"Has been to a football match",
-	"Likes building with Lego",
-	"Has the same favorite color as you",
-	"Can sew a button",
-	"Has been skiing this year",
-	"Loves chocolate",
-	"Has visited a museum",
-	"Likes to sing",
-	"Has fished in the sea or river",
-	"Loves pancakes",
-	"Has the same lucky number as you",
-	"Likes to run",
-	"Has traveled abroad this year",
-	"Can play chess",
-	"Has planted something in the garden",
-	"Loves Taco Friday",
-	"Has been to a concert",
-	"Likes to read comics",
-	"Has the same shoe size as you",
-	"Can make a paper airplane",
-	"Has been to Bergen",
-	"Loves popcorn",
-	"Has gone hiking",
-	"Likes home improvement",
-	"Has the same favorite season as you",
-	"Can ride a scooter",
-	"Has been to the cinema this year",
-	"Loves waffles"
+      "Has baked at home",
+      "Can ride a bike with no hands",
+      "Has seen the northern lights",
+      "Loves pizza",
+      "Can whistle a tune",
+      "Has been to the cabin this summer",
+      "Likes to draw or paint",
+      "Has the same favorite movie as you",
+      "Can do a cartwheel",
+      "Has picked berries in the forest",
+      "Loves to swim",
+      "Has built a snowman this year",
+      "Likes to play video games",
+      "Has been on a cruise",
+      "Loves ice cream",
+      "Has the same number of siblings as you",
+      "Likes to dance",
+      "Has been to an amusement park",
+      "Can play cards",
+      "Has gone camping",
+      "Loves to sleep in",
+      "Has been to a football match",
+      "Likes building with Lego",
+      "Can sew a button",
+      "Has been skiing this year",
+      "Loves chocolate",
+      "Has visited a museum",
+      "Likes to sing",
+      "Has fished in the sea or river",
+      "Loves pancakes",
+      "Has the same lucky number as you",
+      "Likes to run",
+      "Has traveled abroad this year",
+      "Can play chess",
+      "Has planted something in the garden",
+      "Loves Taco Friday",
+      "Has been to a concert",
+      "Likes to read comics",
+      "Has the same shoe size as you",
+      "Can make a paper airplane",
+      "Has been to Bergen",
+      "Loves popcorn",
+      "Has gone hiking",
+      "Likes home improvement",
+      "Has the same favorite season as you",
+      "Can ride a scooter",
+      "Has been to the cinema this year",
+      "Loves waffles"
     ],
     no: [
       "Har reist til 5+ land",
@@ -164,56 +175,56 @@ const IcebreakerBingo = () => {
       "Foretrekker te fremfor kaffe",
       "Har en samlerinteresse",
       "Elsker brettspill",
-	  "Har bakt boller hjemme",
-	"Kan sykle uten hender",
-	"Har sett nordlyset",
-	"Elsker pizza",
-	"Kan fløyte en melodi",
-	"Har vært på hytta i sommer",
-	"Liker å tegne eller male",
-	"Har samme yndlingsfilm som deg",
-	"Kan hoppe bukk",
-	"Har plukket bær i skogen",
-	"Elsker å svømme",
-	"Har bygget snømann i år",
-	"Liker å spille videospill",
-	"Kan gjøre hjulet",
-	"Har vært på cruise",
-	"Elsker is",
-	"Har samme antall søsken som deg",
-	"Liker å danse",
-	"Har vært på Tusenfryd",
-	"Kan spille kort",
-	"Har dratt på campingtur",
-	"Elsker å sove lenge",
-	"Har vært på fotballkamp",
-	"Liker å lage Lego",
-	"Har samme yndlingsfarge som deg",
-	"Kan sy på knapp",
-	"Har gått på ski i år",
-	"Elsker sjokolade",
-	"Har vært på museum",
-	"Liker å synge",
-	"Har fisket i sjøen eller elv",
-	"Elsker pannekaker",
-	"Har samme yndlingstall som deg",
-	"Liker å løpe",
-	"Har vært i utlandet i år",
-	"Kan spille sjakk",
-	"Har plantet noe i hagen",
-	"Elsker fredagstaco",
-	"Har vært på konsert",
-	"Liker å lese tegneserier",
-	"Har samme skostørrelse som deg",
-	"Kan lage papirfly",
-	"Har vært i Bergen",
-	"Elsker popcorn",
-	"Har gått en tur i marka",
-	"Liker å pusse opp",
-	"Har samme favorittårstid som deg",
-	"Kan stå på sparkesykkel",
-	"Har vært på kino i år",
-	"Elsker vafler"
+      "Har bakt boller hjemme",
+      "Kan sykle uten hender",
+      "Har sett nordlyset",
+      "Elsker pizza",
+      "Kan fløyte en melodi",
+      "Har vært på hytta i sommer",
+      "Liker å tegne eller male",
+      "Har samme yndlingsfilm som deg",
+      "Kan hoppe bukk",
+      "Har plukket bær i skogen",
+      "Elsker å svømme",
+      "Har bygget snømann i år",
+      "Liker å spille videospill",
+      "Kan gjøre hjulet",
+      "Har vært på cruise",
+      "Elsker is",
+      "Har samme antall søsken som deg",
+      "Liker å danse",
+      "Har vært på Tusenfryd",
+      "Kan spille kort",
+      "Har dratt på campingtur",
+      "Elsker å sove lenge",
+      "Har vært på fotballkamp",
+      "Liker å lage Lego",
+      "Har samme yndlingsfarge som deg",
+      "Kan sy på knapp",
+      "Har gått på ski i år",
+      "Elsker sjokolade",
+      "Har vært på museum",
+      "Liker å synge",
+      "Har fisket i sjøen eller elv",
+      "Elsker pannekaker",
+      "Har samme yndlingstall som deg",
+      "Liker å løpe",
+      "Har vært i utlandet i år",
+      "Kan spille sjakk",
+      "Har plantet noe i hagen",
+      "Elsker fredagstaco",
+      "Har vært på konsert",
+      "Liker å lese tegneserier",
+      "Har samme skostørrelse som deg",
+      "Kan lage papirfly",
+      "Har vært i Bergen",
+      "Elsker popcorn",
+      "Har gått en tur i marka",
+      "Liker å pusse opp",
+      "Har samme favorittårstid som deg",
+      "Kan stå på sparkesykkel",
+      "Har vært på kino i år",
+      "Elsker vafler"
     ]
   };
 
@@ -244,8 +255,10 @@ const IcebreakerBingo = () => {
       enterGameCode: "Enter Game Code",
       invalidCode: "Invalid game code",
       nameRequired: "Please enter your name",
-      firebaseNotConfigured: "Firebase is not configured. Please add your Firebase config to the code.",
-      loading: "Loading..."
+      loading: "Loading...",
+      signIn: "Connecting...",
+      deleteGame: "Delete Game",
+      confirmDelete: "Are you sure you want to delete this game?"
     },
     no: {
       title: "Icebreaker Bingo",
@@ -273,42 +286,72 @@ const IcebreakerBingo = () => {
       enterGameCode: "Skriv Inn Spillkode",
       invalidCode: "Ugyldig spillkode",
       nameRequired: "Vennligst skriv inn navnet ditt",
-      firebaseNotConfigured: "Firebase er ikke konfigurert. Vennligst legg til Firebase-konfigurasjon i koden.",
-      loading: "Laster..."
+      loading: "Laster...",
+      signIn: "Kobler til...",
+      deleteGame: "Slett Spill",
+      confirmDelete: "Er du sikker på at du vil slette dette spillet?"
     }
   };
 
-  // Initialize Firebase (simulated - in real app would use Firebase SDK)
+  // Initialize auth on mount
   useEffect(() => {
-    // Check if Firebase is configured
-    if (firebaseConfig.apiKey === "YOUR_API_KEY") {
-      setError(translations[language].firebaseNotConfigured);
-    }
-  }, [language]);
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        console.log('✅ User authenticated:', user.uid);
+        setCurrentUser(user);
+      } else {
+        console.log('🔄 Signing in anonymously...');
+        try {
+          const result = await signInAnonymously(auth);
+          console.log('✅ Anonymous sign-in successful:', result.user.uid);
+        } catch (err) {
+          console.error('❌ Auth error:', err);
+          setError('Authentication failed: ' + err.message);
+        }
+      }
+    });
 
-  // Subscribe to game updates when in admin or player view
+    return () => unsubscribe();
+  }, []);
+
+  // Subscribe to game updates
   useEffect(() => {
     if (!currentGameId) return;
 
-    // Simulated Firebase real-time listener
-    // In real implementation, this would be:
-    // const unsubscribe = onSnapshot(doc(db, "games", currentGameId), (doc) => {
-    //   if (doc.exists()) {
-    //     setCurrentGame(doc.data());
-    //   }
-    // });
-    // return () => unsubscribe();
+    console.log('👀 Subscribing to game:', currentGameId);
 
-    // For now, we'll use localStorage as a demo
-    const interval = setInterval(() => {
-      const stored = localStorage.getItem(`game_${currentGameId}`);
-      if (stored) {
-        setCurrentGame(JSON.parse(stored));
+    const unsubscribe = onSnapshot(
+      doc(db, 'games', currentGameId),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const gameData = docSnap.data();
+          console.log('📥 Game data updated:', gameData);
+          setCurrentGame(gameData);
+          
+          // Check if current user is admin
+          if (currentUser && gameData.adminId === currentUser.uid) {
+            setIsAdmin(true);
+          }
+
+          // If player view, load their board
+          if (playerId && gameData.players && gameData.players[playerId]) {
+            const player = gameData.players[playerId];
+            setPlayerBoard(player.board || []);
+            setPlayerNames(player.names || {});
+          }
+        } else {
+          console.error('❌ Game not found');
+          setError('Game not found');
+        }
+      },
+      (error) => {
+        console.error('❌ Error listening to game:', error);
+        setError('Failed to load game: ' + error.message);
       }
-    }, 1000);
+    );
 
-    return () => clearInterval(interval);
-  }, [currentGameId]);
+    return () => unsubscribe();
+  }, [currentGameId, currentUser, playerId]);
 
   const generateGameCode = () => {
     return Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -320,86 +363,115 @@ const IcebreakerBingo = () => {
   };
 
   const createGame = async (gameName) => {
+    if (!currentUser) {
+      setError('Not authenticated');
+      return;
+    }
+
     setLoading(true);
-    const gameCode = generateGameCode();
-    const newGame = {
-      id: gameCode,
-      name: gameName,
-      language: language,
-      players: {},
-      createdAt: new Date().toISOString()
-    };
+    setError('');
 
-    // In real Firebase: await setDoc(doc(db, "games", gameCode), newGame);
-    localStorage.setItem(`game_${gameCode}`, JSON.stringify(newGame));
+    try {
+      const gameCode = generateGameCode();
+      console.log('📝 Creating game:', gameCode);
+      
+      const gameData = {
+        id: gameCode,
+        name: gameName,
+        language: language,
+        adminId: currentUser.uid,
+        players: {},
+        createdAt: serverTimestamp()
+      };
 
-    setCurrentGameId(gameCode);
-    setCurrentGame(newGame);
-    setView('admin');
-    setLoading(false);
+      await setDoc(doc(db, 'games', gameCode), gameData);
+      console.log('✅ Game created successfully in Firestore');
+
+      setCurrentGameId(gameCode);
+      setIsAdmin(true);
+      setView('admin');
+    } catch (err) {
+      console.error('❌ Error creating game:', err);
+      setError('Failed to create game: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const joinGame = async (gameCode, name) => {
+    if (!currentUser) {
+      setError('Not authenticated');
+      return;
+    }
+
     setLoading(true);
-    
-    // In real Firebase: const gameDoc = await getDoc(doc(db, "games", gameCode));
-    const stored = localStorage.getItem(`game_${gameCode}`);
-    
-    if (!stored) {
-      setError(translations[language].invalidCode);
-      setLoading(false);
-      return;
-    }
-
-    if (!name.trim()) {
-      setError(translations[language].nameRequired);
-      setLoading(false);
-      return;
-    }
-
-    const game = JSON.parse(stored);
-    const newPlayerId = Date.now().toString();
-    const board = generateBoard(game.language);
-    
-    const newPlayer = {
-      id: newPlayerId,
-      name: name.trim(),
-      board: board,
-      names: {},
-      joinedAt: new Date().toISOString()
-    };
-
-    game.players[newPlayerId] = newPlayer;
-
-    // In real Firebase: await updateDoc(doc(db, "games", gameCode), { [`players.${newPlayerId}`]: newPlayer });
-    localStorage.setItem(`game_${gameCode}`, JSON.stringify(game));
-
-    setCurrentGameId(gameCode);
-    setCurrentGame(game);
-    setPlayerName(name.trim());
-    setPlayerId(newPlayerId);
-    setPlayerBoard(board);
-    setPlayerNames({});
-    setLanguage(game.language);
-    setView('player');
-    setLoading(false);
     setError('');
+
+    try {
+      console.log('🔍 Looking for game:', gameCode);
+      const gameRef = doc(db, 'games', gameCode);
+      const gameSnap = await getDoc(gameRef);
+
+      if (!gameSnap.exists()) {
+        setError(translations[language].invalidCode);
+        setLoading(false);
+        return;
+      }
+
+      if (!name.trim()) {
+        setError(translations[language].nameRequired);
+        setLoading(false);
+        return;
+      }
+
+      const gameData = gameSnap.data();
+      const newPlayerId = Date.now().toString();
+      const board = generateBoard(gameData.language);
+
+      const newPlayer = {
+        id: newPlayerId,
+        name: name.trim(),
+        board: board,
+        names: {},
+        joinedAt: new Date().toISOString()
+      };
+
+      console.log('👤 Joining game as:', name.trim());
+
+      // Update game with new player
+      await updateDoc(gameRef, {
+        [`players.${newPlayerId}`]: newPlayer
+      });
+
+      console.log('✅ Joined game successfully');
+
+      setCurrentGameId(gameCode);
+      setPlayerName(name.trim());
+      setPlayerId(newPlayerId);
+      setPlayerBoard(board);
+      setPlayerNames({});
+      setLanguage(gameData.language);
+      setView('player');
+    } catch (err) {
+      console.error('❌ Error joining game:', err);
+      setError('Failed to join game: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const updatePlayerProgress = async (names) => {
     if (!currentGameId || !playerId) return;
 
-    const stored = localStorage.getItem(`game_${currentGameId}`);
-    if (!stored) return;
-
-    const game = JSON.parse(stored);
-    if (!game.players[playerId]) return;
-
-    game.players[playerId].names = names;
-
-    // In real Firebase: await updateDoc(doc(db, "games", currentGameId), { [`players.${playerId}.names`]: names });
-    localStorage.setItem(`game_${currentGameId}`, JSON.stringify(game));
-    setCurrentGame(game);
+    try {
+      const gameRef = doc(db, 'games', currentGameId);
+      await updateDoc(gameRef, {
+        [`players.${playerId}.names`]: names
+      });
+      console.log('✅ Progress updated');
+    } catch (err) {
+      console.error('❌ Error updating progress:', err);
+    }
   };
 
   const toggleSquare = (index, name) => {
@@ -465,48 +537,63 @@ const IcebreakerBingo = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const generateNewBoard = () => {
-    if (!currentGame || !playerId) return;
+  const generateNewBoard = async () => {
+    if (!currentGame || !playerId || !currentGameId) return;
     
     const newBoard = generateBoard(currentGame.language);
-    setPlayerBoard(newBoard);
     const newNames = {};
+    
+    setPlayerBoard(newBoard);
     setPlayerNames(newNames);
     
-    const stored = localStorage.getItem(`game_${currentGameId}`);
-    if (stored) {
-      const game = JSON.parse(stored);
-      if (game.players[playerId]) {
-        game.players[playerId].board = newBoard;
-        game.players[playerId].names = newNames;
-        localStorage.setItem(`game_${currentGameId}`, JSON.stringify(game));
-        setCurrentGame(game);
-      }
+    try {
+      const gameRef = doc(db, 'games', currentGameId);
+      await updateDoc(gameRef, {
+        [`players.${playerId}.board`]: newBoard,
+        [`players.${playerId}.names`]: newNames
+      });
+      console.log('✅ New board generated');
+    } catch (err) {
+      console.error('❌ Error generating new board:', err);
     }
+  };
+
+  const deleteGame = async () => {
+    if (!currentGameId || !isAdmin) return;
+    
+    if (!window.confirm(translations[language].confirmDelete)) {
+      return;
+    }
+
+    try {
+      await deleteDoc(doc(db, 'games', currentGameId));
+      console.log('✅ Game deleted');
+      goBackToMenu();
+    } catch (err) {
+      console.error('❌ Error deleting game:', err);
+      setError('Failed to delete game: ' + err.message);
+    }
+  };
+
+  const goBackToMenu = () => {
+    setView('menu');
+    setCurrentGameId(null);
+    setCurrentGame(null);
+    setPlayerName('');
+    setPlayerId(null);
+    setIsAdmin(false);
+    setError('');
   };
 
   const t = translations[language];
 
-  // Error display
-  if (error && error === t.firebaseNotConfigured) {
+  // Loading state
+  if (!currentUser) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-red-50 to-red-100 p-4 md:p-8 flex items-center justify-center">
-        <div className="max-w-2xl bg-white rounded-lg shadow-xl p-8">
-          <h1 className="text-3xl font-bold text-red-600 mb-4">⚠️ Configuration Required</h1>
-          <p className="text-gray-700 mb-4">{error}</p>
-          <div className="bg-gray-100 rounded p-4 text-sm font-mono">
-            <p className="mb-2">Replace the firebaseConfig object with your Firebase settings:</p>
-            <pre className="text-xs overflow-x-auto">
-{`const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:abc123"
-};`}
-            </pre>
-          </div>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 flex items-center justify-center">
+        <div className="bg-white rounded-lg shadow-xl p-8 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">{t.signIn}</p>
         </div>
       </div>
     );
@@ -529,7 +616,7 @@ const IcebreakerBingo = () => {
               </button>
             </div>
 
-            {error && error !== t.firebaseNotConfigured && (
+            {error && (
               <div className="mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
                 {error}
               </div>
@@ -622,12 +709,16 @@ const IcebreakerBingo = () => {
                   <Globe size={20} />
                   <span className="font-medium">{language === 'en' ? 'NO' : 'EN'}</span>
                 </button>
+                {isAdmin && (
+                  <button
+                    onClick={deleteGame}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                  >
+                    {t.deleteGame}
+                  </button>
+                )}
                 <button
-                  onClick={() => {
-                    setView('menu');
-                    setCurrentGameId(null);
-                    setCurrentGame(null);
-                  }}
+                  onClick={goBackToMenu}
                   className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
                 >
                   {t.backToMenu}
@@ -733,13 +824,7 @@ const IcebreakerBingo = () => {
                 <span className="font-medium">{t.newGame}</span>
               </button>
               <button
-                onClick={() => {
-                  setView('menu');
-                  setCurrentGameId(null);
-                  setCurrentGame(null);
-                  setPlayerName('');
-                  setPlayerId(null);
-                }}
+                onClick={goBackToMenu}
                 className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
               >
                 {t.backToMenu}

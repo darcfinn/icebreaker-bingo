@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Firebase Test</title>
+</head>
+<body>
+  <h1>Firebase Connection Test</h1>
+  <div id="status">Testing...</div>
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+    import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+    import { getFirestore, doc, setDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+    const firebaseConfig = {
+	  apiKey: "AIzaSyDNDryo1trXwkaQsFqMDQy7DkJxZuKXfBc",
+	  authDomain: "icebreaker-bingo-91a9c.firebaseapp.com",
+	  projectId: "icebreaker-bingo-91a9c",
+	  storageBucket: "icebreaker-bingo-91a9c.firebasestorage.app",
+	  messagingSenderId: "669185422322",
+	  appId: "1:669185422322:web:cfc4e11f13cdae1b18b16b",
+	  measurementId: "G-4KWXE85SQ8"
+	};
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    async function test() {
+      const status = document.getElementById('status');
+      
+      try {
+        status.innerHTML = 'Step 1: Signing in...';
+        const userCredential = await signInAnonymously(auth);
+        status.innerHTML += '<br>✅ Authenticated: ' + userCredential.user.uid;
+
+        status.innerHTML += '<br>Step 2: Writing to Firestore...';
+        await setDoc(doc(db, 'test', 'connection'), {
+          timestamp: new Date(),
+          message: 'Connection successful'
+        });
+        status.innerHTML += '<br>✅ Write successful!';
+        
+        status.innerHTML += '<br><br>🎉 Firebase is working!';
+      } catch (error) {
+        status.innerHTML += '<br>❌ Error: ' + error.message;
+        console.error(error);
+      }
+    }
+
+    test();
+  </script>
+</body>
+</html>
