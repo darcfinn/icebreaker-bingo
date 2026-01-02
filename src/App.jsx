@@ -1,8 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Shuffle, Globe, Users, Copy, Check, Trophy, User, LogIn, LogOut, Lock } from 'lucide-react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { auth, db } from './lib/firebase';
+import * as authService from './services/authService';
+import * as gameService from './services/gameService';
+import { useAuth } from './hooks/useAuth';
+import { useGame } from './hooks/useGame';
+import { usePlayer } from './hooks/usePlayer';
 
 /**
  * ICEBREAKER BINGO APPLICATION
@@ -17,24 +22,6 @@ import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteDoc, se
  * - Direct game URLs for easy sharing
  * - Multi-language support (English/Norwegian)
  */
-
-// Firebase configuration from environment variables
-// These values are loaded from .env.local file or directly from the config object
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDNDryo1trXwkaQsFqMDQy7DkJxZuKXfBc",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "icebreaker-bingo-91a9c.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "icebreaker-bingo-91a9c",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "icebreaker-bingo-91a9c.firebasestorage.app",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "669185422322",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:669185422322:web:cfc4e11f13cdae1b18b16b"
-};
-
-// Initialize Firebase services
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app); // Authentication service
-const db = getFirestore(app); // Firestore database
-
-console.log('🔥 Firebase initialized');
 
 const IcebreakerBingo = () => {
   // ===========================================
@@ -63,28 +50,22 @@ const IcebreakerBingo = () => {
   // Language: 'en' (English) or 'no' (Norwegian)
   const [language, setLanguage] = useState('en');
   
-  // Authentication & User Management
-  const [currentUser, setCurrentUser] = useState(null); // Firebase user object
-  const [isAdmin, setIsAdmin] = useState(false); // True if user logged in with email/password
-  const [adminEmail, setAdminEmail] = useState(''); // Login form field
-  const [adminPassword, setAdminPassword] = useState(''); // Login form field
   
+  
+  // Use custom hooks
+  const auth = useAuth();
+  const game = useGame(auth.currentUser, auth.isAdmin);
+  const player = usePlayer();
+
+  // UI-specific state
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+   
   // Admin Game Management
-  const [myGames, setMyGames] = useState([]); // List of games created by this admin
-  const [currentGameId, setCurrentGameId] = useState(null); // Currently viewed game ID
-  const [currentGame, setCurrentGame] = useState(null); // Currently viewed game data
   const [playerSortBy, setPlayerSortBy] = useState('progress'); // 'progress' or 'name'
   const [playerSortOrder, setPlayerSortOrder] = useState('desc'); // 'asc' or 'desc'
   
-  // Player Game State
-  const [playerName, setPlayerName] = useState(''); // Player's display name
-  const [playerId, setPlayerId] = useState(null); // Unique player ID in the game
-  const [playerBoard, setPlayerBoard] = useState([]); // Player's 5x5 bingo board
-  const [playerNames, setPlayerNames] = useState({}); // Names entered in each square {index: name}
-  const [playerSessionRestored, setPlayerSessionRestored] = useState(false); // Track if we restored from localStorage
-  
   // UI State
-  const [duplicateWarning, setDuplicateWarning] = useState(''); // Warning when same name used twice
   const [copied, setCopied] = useState(false); // Shows "Copied!" feedback
   const [loading, setLoading] = useState(false); // Loading indicator
   const [error, setError] = useState(''); // Error message display
@@ -467,23 +448,14 @@ const IcebreakerBingo = () => {
    * Loads all games created by the specified admin
    * @param {string} adminId - Firebase UID of the admin
    */
-  const loadMyGames = async (adminId) => {
-    try {
-      const gamesRef = collection(db, 'games');
-      const q = query(gamesRef, where('adminId', '==', adminId));
-      const querySnapshot = await getDocs(q);
-      
-      const games = [];
-      querySnapshot.forEach((doc) => {
-        games.push({ id: doc.id, ...doc.data() });
-      });
-      
-      setMyGames(games);
-      console.log('✅ Loaded games:', games.length);
-    } catch (err) {
-      console.error('❌ Error loading games:', err);
-    }
-  };
+	const loadMyGames = async (adminId) => {
+	  try {
+	    const games = await gameService.loadAdminGames(adminId);
+	    setMyGames(games);
+	  } catch (err) {
+	    console.error('❌ Error loading games:', err);
+	  }
+	};
 
   // ===========================================
   // AUTHENTICATION FUNCTIONS
@@ -493,45 +465,27 @@ const IcebreakerBingo = () => {
    * Handles admin login with email and password
    * On success, Firebase auth state change triggers navigation to dashboard
    */
-  const handleAdminLogin = async () => {
-    setLoading(true);
-    setError('');
-
-    console.log('🔐 Attempting login with:', adminEmail);
-
-    try {
-      const userCredential = await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
-      console.log('✅ Admin logged in successfully:', userCredential.user.email);
-      console.log('🔑 User UID:', userCredential.user.uid);
-      setAdminEmail('');
-      setAdminPassword('');
-      
-      // Explicitly navigate to dashboard after successful login
-      console.log('📍 Forcing navigation to adminDashboard');
-      setIsAdmin(true);
-      setView('adminDashboard');
-      await loadMyGames(userCredential.user.uid);
-    } catch (err) {
-      console.error('❌ Login error:', err);
-      console.error('Error code:', err.code);
-      console.error('Error message:', err.message);
-      
-      // More specific error messages
-      if (err.code === 'auth/user-not-found') {
-        setError('No account found with this email');
-      } else if (err.code === 'auth/wrong-password') {
-        setError('Incorrect password');
-      } else if (err.code === 'auth/invalid-email') {
-        setError('Invalid email format');
-      } else if (err.code === 'auth/too-many-requests') {
-        setError('Too many failed attempts. Try again later');
-      } else {
-        setError(translations[language].loginError + ': ' + err.message);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
+	const handleAdminLogin = async () => {
+	  setLoading(true);
+	  setError('');
+	
+	  try {
+	    const userCredential = await authService.loginAdmin(adminEmail, adminPassword);
+	    setAdminEmail('');
+	    setAdminPassword('');
+	    setIsAdmin(true);
+	    setView('adminDashboard');
+	    const games = await gameService.loadAdminGames(userCredential.user.uid);
+	    setMyGames(games);
+	  } catch (err) {
+	    if (err.code === 'auth/user-not-found') setError('No account found');
+	    else if (err.code === 'auth/wrong-password') setError('Incorrect password');
+	    else setError('Login failed');
+	  } finally {
+	    setLoading(false);
+	  }
+	};
+ 
 
   /**
    * Logs out the admin and returns to landing page
@@ -577,109 +531,97 @@ const IcebreakerBingo = () => {
    * Creates a new game in Firestore
    * @param {string} gameName - Display name for the game
    */
-  const createGame = async (gameName) => {
-    if (!currentUser || !isAdmin) {
-      setError('Admin access required');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-
-    try {
-      const gameCode = generateGameCode();
-      console.log('📝 Creating game:', gameCode);
-      
-      const gameData = {
-        id: gameCode,
-        name: gameName,
-        language: language,
-        adminId: currentUser.uid,
-        adminEmail: currentUser.email,
-        players: {},
-        status: 'active', // 'active' or 'ended'
-        createdAt: serverTimestamp()
-      };
-
-      await setDoc(doc(db, 'games', gameCode), gameData);
-      console.log('✅ Game created successfully');
-
-      await loadMyGames(currentUser.uid);
-    } catch (err) {
-      console.error('❌ Error creating game:', err);
-      setError('Failed to create game: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+	const createGame = async (gameName) => {
+	  if (!auth.currentUser || !auth.isAdmin) {
+	    setError('Admin access required');
+	    return;
+	  }
+	
+	  setLoading(true);
+	  setError('');
+	
+	  try {
+	    const gameCode = await gameService.createGame({
+	      name: gameName,
+	      language: language,
+	      adminId: auth.currentUser.uid,
+	      adminEmail: auth.currentUser.email,
+	      players: {}
+	    });
+	    
+	    console.log('✅ Game created:', gameCode);
+	    const games = await gameService.loadAdminGames(auth.currentUser.uid);
+	    setMyGames(games);
+	  } catch (err) {
+	    console.error('❌ Error creating game:', err);
+	    setError('Failed to create game: ' + err.message);
+	  } finally {
+	    setLoading(false);
+	  }
+	};
 
   /**
    * Navigates to the game view for admins
    * Loads initial game data before switching view
    * @param {string} gameId - Game code to view
    */
-  const viewGame = async (gameId) => {
-    console.log('🎮 Opening game view:', gameId);
-    try {
-      // Load game data first
-      const gameRef = doc(db, 'games', gameId);
-      const gameSnap = await getDoc(gameRef);
-      
-      if (gameSnap.exists()) {
-        setCurrentGame(gameSnap.data());
-        setCurrentGameId(gameId);
-        setView('adminGameView');
-        console.log('✅ Game loaded, switching to admin view');
-      } else {
-        console.error('❌ Game not found');
-        setError('Game not found');
-      }
-    } catch (err) {
-      console.error('❌ Error loading game:', err);
-      setError('Failed to load game');
-    }
-  };
+	const viewGame = async (gameId) => {
+	  console.log('🎮 Opening game view:', gameId);
+	  try {
+	    const gameData = await gameService.getGame(gameId);
+	    
+	    if (gameData) {
+	      setCurrentGame(gameData);
+	      setCurrentGameId(gameId);
+	      setView('adminGameView');
+	      console.log('✅ Game loaded');
+	    } else {
+	      console.error('❌ Game not found');
+	      setError('Game not found');
+	    }
+	  } catch (err) {
+	    console.error('❌ Error loading game:', err);
+	    setError('Failed to load game');
+	  }
+	};
 
   /**
    * Ends a game (closes it to new players but preserves data)
    * @param {string} gameId - Game code to end
    */
-  const endGame = async (gameId) => {
-    if (!window.confirm(translations[language].confirmEndGame)) {
-      return;
-    }
-
-    try {
-      await updateDoc(doc(db, 'games', gameId), {
-        status: 'ended',
-        endedAt: serverTimestamp()
-      });
-      console.log('✅ Game ended');
-      await loadMyGames(currentUser.uid);
-    } catch (err) {
-      console.error('❌ Error ending game:', err);
-      setError('Failed to end game');
-    }
-  };
+	const endGame = async (gameId) => {
+	  if (!window.confirm(translations[language].confirmEndGame)) {
+	    return;
+	  }
+	
+	  try {
+	    await gameService.endGame(gameId);
+	    const games = await gameService.loadAdminGames(auth.currentUser.uid);
+	    setMyGames(games);
+	  } catch (err) {
+	    console.error('❌ Error ending game:', err);
+	    setError('Failed to end game');
+	  }
+	};
 
   /**
    * Permanently deletes a game and all its data
    * @param {string} gameId - Game code to delete
    */
-  const deleteGame = async (gameId) => {
-    if (!window.confirm(translations[language].confirmDelete)) {
-      return;
-    }
-
-    try {
-      await deleteDoc(doc(db, 'games', gameId));
-      console.log('✅ Game deleted');
-      await loadMyGames(currentUser.uid);
-    } catch (err) {
-      console.error('❌ Error deleting game:', err);
-      setError('Failed to delete game');
-    }
-  };
+	const deleteGame = async (gameId) => {
+	  if (!window.confirm(translations[language].confirmDelete)) {
+	    return;
+	  }
+	
+	  try {
+	    await gameService.deleteGame(gameId);
+	    const games = await gameService.loadAdminGames(auth.currentUser.uid);
+	    setMyGames(games);
+	  } catch (err) {
+	    console.error('❌ Error deleting game:', err);
+	    setError('Failed to delete game');
+	  }
+	};
 
   /**
    * Allows a player to join a game anonymously
@@ -693,7 +635,7 @@ const IcebreakerBingo = () => {
 
     try {
       // Sign in anonymously for players
-      if (!currentUser) {
+      if (!auth.currentUser) {
         await signInAnonymously(auth);
       }
 
@@ -981,7 +923,7 @@ const IcebreakerBingo = () => {
     window.history.replaceState({}, '', window.location.pathname);
     
     // Sign out anonymous user
-    if (currentUser && !currentUser.email) {
+    if (auth.currentUser && !auth.currentUser.email) {
       await signOut(auth);
     }
   };
@@ -999,8 +941,8 @@ const IcebreakerBingo = () => {
       <div>Current View: <span className="text-green-300">{view}</span></div>
       <div>URL Search: <span className="text-green-300">{window.location.search || '(empty)'}</span></div>
       <div>Game Code from URL: <span className="text-green-300">{prefilledGameCode || '(none)'}</span></div>
-      <div>Is Admin: <span className="text-green-300">{isAdmin ? 'Yes' : 'No'}</span></div>
-      <div>Current User: <span className="text-green-300">{currentUser ? (currentUser.email || 'Anonymous') : 'None'}</span></div>
+      <div>Is Admin: <span className="text-green-300">{auth.isAdmin ? 'Yes' : 'No'}</span></div>
+      <div>Current User: <span className="text-green-300">{auth.currentUser ? (auth.currentUser.email || 'Anonymous') : 'None'}</span></div>
       <div>Loading: <span className="text-green-300">{loading ? 'Yes' : 'No'}</span></div>
     </div>
   );
@@ -1017,12 +959,12 @@ const IcebreakerBingo = () => {
         <DiagnosticInfo />
         <div className="max-w-4xl w-full">
           {/* User Status Bar */}
-          {currentUser && currentUser.email && (
+          {auth.currentUser && auth.currentUser.email && (
             <div className="mb-6 bg-white bg-opacity-20 backdrop-blur-sm rounded-lg p-4 text-white">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="bg-green-500 w-3 h-3 rounded-full"></div>
-                  <span>Logged in as: <strong>{currentUser.email}</strong></span>
+                  <span>Logged in as: <strong>{auth.currentUser.email}</strong></span>
                 </div>
                 <button
                   onClick={handleAdminLogout}
@@ -1044,7 +986,7 @@ const IcebreakerBingo = () => {
             {/* Admin Login Card */}
             <div 
               onClick={() => {
-                if (isAdmin) {
+                if (auth.isAdmin) {
                   setView('adminDashboard');
                 } else {
                   setView('adminLogin');
@@ -1054,13 +996,13 @@ const IcebreakerBingo = () => {
             >
               <div className="text-center">
                 <div className="bg-indigo-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
-                  {isAdmin ? <User size={40} className="text-indigo-600" /> : <LogIn size={40} className="text-indigo-600" />}
+                  {auth.isAdmin ? <User size={40} className="text-indigo-600" /> : <LogIn size={40} className="text-indigo-600" />}
                 </div>
                 <h2 className="text-2xl font-bold text-gray-800 mb-3">
-                  {isAdmin ? 'Admin Dashboard' : t.adminLogin}
+                  {auth.isAdmin ? 'Admin Dashboard' : t.adminLogin}
                 </h2>
                 <p className="text-gray-600">
-                  {isAdmin ? 'Manage your games' : 'Create and manage games'}
+                  {auth.isAdmin ? 'Manage your games' : 'Create and manage games'}
                 </p>
               </div>
             </div>
@@ -1183,7 +1125,7 @@ const IcebreakerBingo = () => {
             <div className="flex justify-between items-center">
               <div>
                 <h1 className="text-3xl font-bold text-indigo-600">{t.myGames}</h1>
-                <p className="text-gray-600 mt-1">Welcome, {currentUser?.email}</p>
+                <p className="text-gray-600 mt-1">Welcome, {auth.currentUser?.email}</p>
               </div>
               <div className="flex gap-3">
                 <button
@@ -1493,7 +1435,7 @@ const IcebreakerBingo = () => {
   // Admins are blocked from joining as players
   if (view === 'playerJoin') {
     // Block admins from joining as players
-    if (isAdmin && currentUser?.email) {
+    if (isAdmin && auth.currentUser?.email) {
       return (
         <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 flex items-center justify-center">
           <DiagnosticInfo />

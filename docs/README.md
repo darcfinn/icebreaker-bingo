@@ -78,7 +78,7 @@ For detailed information about the project organization and conventions, see [Pr
 
 ## 🚀 Available Scripts
 
-- `npm run dev` - Start development server (http://localhost:5173)
+- `npm run dev` - Start development server (http://localhost:4173)
 - `npm run build` - Build for production
 - `npm run preview` - Preview production build locally
 
