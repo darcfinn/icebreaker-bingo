@@ -1,10 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { Shuffle, Globe, Users, Copy, Check, Trophy, User } from 'lucide-react';
+import { Shuffle, Globe, Users, Copy, Check, Trophy, User, LogIn, LogOut, Lock } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, updateDoc, deleteDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
+
+/**
+ * ICEBREAKER BINGO APPLICATION
+ * 
+ * This application allows admins to create and manage icebreaker bingo games,
+ * while players can join games anonymously using a game code.
+ * 
+ * Key Features:
+ * - Admin authentication with email/password
+ * - Anonymous player access via game codes
+ * - Real-time synchronization across devices
+ * - Direct game URLs for easy sharing
+ * - Multi-language support (English/Norwegian)
+ */
 
 // Firebase configuration from environment variables
+// These values are loaded from .env.local file or directly from the config object
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDNDryo1trXwkaQsFqMDQy7DkJxZuKXfBc",
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "icebreaker-bingo-91a9c.firebaseapp.com",
@@ -14,35 +29,72 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:669185422322:web:cfc4e11f13cdae1b18b16b"
 };
 
-// Initialize Firebase
+// Initialize Firebase services
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
+const auth = getAuth(app); // Authentication service
+const db = getFirestore(app); // Firestore database
 
-// DIAGNOSTIC LOGGING
-console.log('🔥 Firebase initialized:', {
-  app: app.name,
-  authConfigured: !!auth,
-  dbConfigured: !!db,
-  projectId: firebaseConfig.projectId
-});
+console.log('🔥 Firebase initialized');
 
 const IcebreakerBingo = () => {
-  const [view, setView] = useState('menu');
+  // ===========================================
+  // INITIAL URL PARAMETER CHECK
+  // ===========================================
+  // Check if there's a game code in the URL (e.g., ?game=ABC123)
+  // This must happen before state initialization to properly set the initial view
+  const urlParams = new URLSearchParams(window.location.search);
+  const gameCodeFromUrl = urlParams.get('game');
+  const playerIdFromUrl = urlParams.get('player');
+  
+  // If both game and player are in URL, this is a returning player
+  // Start with playerGame view and let the effect restore the session
+  const initialView = (gameCodeFromUrl && playerIdFromUrl) ? 'playerGame' : 
+                      gameCodeFromUrl ? 'playerJoin' : 
+                      'landing';
+  
+  // ===========================================
+  // STATE MANAGEMENT
+  // ===========================================
+  
+  // View state: Controls which screen/page is currently displayed
+  // Options: 'landing', 'adminLogin', 'adminDashboard', 'adminGameView', 'playerJoin', 'playerGame'
+  const [view, setView] = useState(initialView);
+  
+  // Language: 'en' (English) or 'no' (Norwegian)
   const [language, setLanguage] = useState('en');
-  const [currentUser, setCurrentUser] = useState(null);
-  const [currentGameId, setCurrentGameId] = useState(null);
-  const [currentGame, setCurrentGame] = useState(null);
-  const [playerName, setPlayerName] = useState('');
-  const [playerId, setPlayerId] = useState(null);
-  const [playerBoard, setPlayerBoard] = useState([]);
-  const [playerNames, setPlayerNames] = useState({});
-  const [duplicateWarning, setDuplicateWarning] = useState('');
-  const [copied, setCopied] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [isAdmin, setIsAdmin] = useState(false);
+  
+  // Authentication & User Management
+  const [currentUser, setCurrentUser] = useState(null); // Firebase user object
+  const [isAdmin, setIsAdmin] = useState(false); // True if user logged in with email/password
+  const [adminEmail, setAdminEmail] = useState(''); // Login form field
+  const [adminPassword, setAdminPassword] = useState(''); // Login form field
+  
+  // Admin Game Management
+  const [myGames, setMyGames] = useState([]); // List of games created by this admin
+  const [currentGameId, setCurrentGameId] = useState(null); // Currently viewed game ID
+  const [currentGame, setCurrentGame] = useState(null); // Currently viewed game data
+  const [playerSortBy, setPlayerSortBy] = useState('progress'); // 'progress' or 'name'
+  const [playerSortOrder, setPlayerSortOrder] = useState('desc'); // 'asc' or 'desc'
+  
+  // Player Game State
+  const [playerName, setPlayerName] = useState(''); // Player's display name
+  const [playerId, setPlayerId] = useState(null); // Unique player ID in the game
+  const [playerBoard, setPlayerBoard] = useState([]); // Player's 5x5 bingo board
+  const [playerNames, setPlayerNames] = useState({}); // Names entered in each square {index: name}
+  const [playerSessionRestored, setPlayerSessionRestored] = useState(false); // Track if we restored from localStorage
+  
+  // UI State
+  const [duplicateWarning, setDuplicateWarning] = useState(''); // Warning when same name used twice
+  const [copied, setCopied] = useState(false); // Shows "Copied!" feedback
+  const [loading, setLoading] = useState(false); // Loading indicator
+  const [error, setError] = useState(''); // Error message display
+  const [prefilledGameCode, setPrefilledGameCode] = useState(gameCodeFromUrl ? gameCodeFromUrl.toUpperCase() : null); // Game code from URL
 
+  // ===========================================
+  // BINGO STATEMENTS DATABASE
+  // ===========================================
+  // 90 statements in each language for variety
+  // Each player gets a random selection of 25 statements
   const statements = {
     en: [
       "Has traveled to 5+ countries",
@@ -228,93 +280,154 @@ const IcebreakerBingo = () => {
     ]
   };
 
+  // ===========================================
+  // TRANSLATIONS
+  // ===========================================
+  // All UI text in both English and Norwegian
   const translations = {
     en: {
-      title: "Icebreaker Bingo",
-      createGame: "Create New Game",
-      joinGame: "Join Game",
-      adminPanel: "Admin Panel",
-      playerView: "Player View",
+      appTitle: "Icebreaker Bingo",
+      tagline: "Break the ice, build connections",
+      adminLogin: "Admin Login",
+      participate: "Join as Player",
+      email: "Email",
+      password: "Password",
+      login: "Login",
+      loginError: "Invalid credentials",
+      logout: "Logout",
+      backToHome: "Back to Home",
+      myGames: "My Games",
+      createNewGame: "Create New Game",
+      noGames: "No games yet. Create your first game!",
       gameName: "Game Name",
-      gameCode: "Game Code",
       create: "Create",
-      join: "Join",
-      yourName: "Your Name",
+      gameCode: "Game Code",
       copyLink: "Copy Game Link",
       copied: "Copied!",
+      viewGame: "View Game",
+      deleteGame: "Delete",
+      confirmDelete: "Are you sure you want to delete this game?",
       registeredPlayers: "Registered Players",
       noPlayers: "No players yet",
-      playerProgress: "Player Progress",
       hasBingo: "HAS BINGO!",
-      backToMenu: "Back to Menu",
-      subtitle: "Find people who match these descriptions!",
-      newGame: "New Board",
-      winMessage: "BINGO! You won!",
-      instructions: "Type names in squares when you find matching people. Get 5 in a row to win!",
       filled: "Filled",
       enterGameCode: "Enter Game Code",
+      yourName: "Your Name",
+      join: "Join",
       invalidCode: "Invalid game code",
       nameRequired: "Please enter your name",
+      newBoard: "New Board",
+      backToMenu: "Leave Game",
+      subtitle: "Find people who match these descriptions!",
+      winMessage: "BINGO! You won!",
+      instructions: "Type names in squares when you find matching people. Get 5 in a row to win!",
       loading: "Loading...",
-      signIn: "Connecting...",
-      deleteGame: "Delete Game",
-      confirmDelete: "Are you sure you want to delete this game?"
+      playingAs: "Playing as",
+      endGame: "End Game",
+      gameEnded: "Game Ended",
+      confirmEndGame: "Are you sure you want to end this game? Players can no longer join, but data will be preserved.",
+      active: "Active",
+      ended: "Ended",
+      adminCannotPlay: "Admin Cannot Join as Player",
+      adminPlayMessage: "You are currently logged in as an administrator. To join a game as a player, please:",
+      adminPlayStep1: "1. Log out from your admin account, or",
+      adminPlayStep2: "2. Open this page in a private/incognito window",
+      confirmLeaveGame: "Are you sure you want to leave this game? Your progress will be lost.",
+      refresh: "Refresh",
+      sortBy: "Sort by:",
+      progress: "Progress",
+      name: "Name",
+      ascending: "Ascending",
+      descending: "Descending"
     },
     no: {
-      title: "Icebreaker Bingo",
-      createGame: "Opprett Nytt Spill",
-      joinGame: "Bli Med i Spill",
-      adminPanel: "Adminpanel",
-      playerView: "Spillervisning",
+      appTitle: "Icebreaker Bingo",
+      tagline: "Bryt isen, bygg relasjoner",
+      adminLogin: "Admin Innlogging",
+      participate: "Delta som Spiller",
+      email: "E-post",
+      password: "Passord",
+      login: "Logg Inn",
+      loginError: "Ugyldig pålogging",
+      logout: "Logg Ut",
+      backToHome: "Tilbake til Hjem",
+      myGames: "Mine Spill",
+      createNewGame: "Opprett Nytt Spill",
+      noGames: "Ingen spill ennå. Opprett ditt første spill!",
       gameName: "Spillnavn",
-      gameCode: "Spillkode",
       create: "Opprett",
-      join: "Bli Med",
-      yourName: "Ditt Navn",
+      gameCode: "Spillkode",
       copyLink: "Kopier Spilllenke",
       copied: "Kopiert!",
+      viewGame: "Se Spill",
+      deleteGame: "Slett",
+      confirmDelete: "Er du sikker på at du vil slette dette spillet?",
       registeredPlayers: "Registrerte Spillere",
       noPlayers: "Ingen spillere ennå",
-      playerProgress: "Spillerfremgang",
       hasBingo: "HAR BINGO!",
-      backToMenu: "Tilbake til Meny",
-      subtitle: "Finn personer som passer til disse beskrivelsene!",
-      newGame: "Nytt Brett",
-      winMessage: "BINGO! Du vant!",
-      instructions: "Skriv inn navn i ruter når du finner personer som passer. Få 5 på rad for å vinne!",
       filled: "Fylt",
       enterGameCode: "Skriv Inn Spillkode",
+      yourName: "Ditt Navn",
+      join: "Bli Med",
       invalidCode: "Ugyldig spillkode",
       nameRequired: "Vennligst skriv inn navnet ditt",
+      newBoard: "Nytt Brett",
+      backToMenu: "Forlat Spill",
+      subtitle: "Finn personer som passer til disse beskrivelsene!",
+      winMessage: "BINGO! Du vant!",
+      instructions: "Skriv inn navn i ruter når du finner personer som passer. Få 5 på rad for å vinne!",
       loading: "Laster...",
-      signIn: "Kobler til...",
-      deleteGame: "Slett Spill",
-      confirmDelete: "Er du sikker på at du vil slette dette spillet?"
+      playingAs: "Spiller som",
+      endGame: "Avslutt Spill",
+      gameEnded: "Spill Avsluttet",
+      confirmEndGame: "Er du sikker på at du vil avslutte dette spillet? Spillere kan ikke lenger bli med, men data blir bevart.",
+      active: "Aktivt",
+      ended: "Avsluttet",
+      adminCannotPlay: "Admin Kan Ikke Delta Som Spiller",
+      adminPlayMessage: "Du er for øyeblikket innlogget som administrator. For å delta i et spill som spiller, vennligst:",
+      adminPlayStep1: "1. Logg ut fra administratorkontoen din, eller",
+      adminPlayStep2: "2. Åpne denne siden i et privat/inkognito vindu",
+      confirmLeaveGame: "Er du sikker på at du vil forlate dette spillet? Fremgangen din vil gå tapt.",
+      refresh: "Oppdater",
+      sortBy: "Sorter etter:",
+      progress: "Fremgang",
+      name: "Navn",
+      ascending: "Stigende",
+      descending: "Synkende"
     }
   };
 
-  // Initialize auth on mount
+  // Monitor auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        console.log('✅ User authenticated:', user.uid);
+        console.log('✅ User authenticated:', user.email || user.uid);
         setCurrentUser(user);
-      } else {
-        console.log('🔄 Signing in anonymously...');
-        try {
-          const result = await signInAnonymously(auth);
-          console.log('✅ Anonymous sign-in successful:', result.user.uid);
-        } catch (err) {
-          console.error('❌ Auth error:', err);
-          setError('Authentication failed: ' + err.message);
+        
+        // Check if this is an admin (has email) or anonymous player
+        if (user.email) {
+          setIsAdmin(true);
+          if (view === 'adminLogin') {
+            setView('adminDashboard');
+          }
+          // Load admin's games
+          await loadMyGames(user.uid);
         }
+      } else {
+        console.log('No user authenticated');
+        setCurrentUser(null);
+        setIsAdmin(false);
       }
     });
 
     return () => unsubscribe();
   }, []);
 
-  // Subscribe to game updates
+  // ===========================================
+  // EFFECT: REAL-TIME GAME DATA SUBSCRIPTION
+  // ===========================================
+  // Subscribes to Firestore updates for the current game
+  // Updates player board and progress in real-time
   useEffect(() => {
     if (!currentGameId) return;
 
@@ -325,14 +438,8 @@ const IcebreakerBingo = () => {
       (docSnap) => {
         if (docSnap.exists()) {
           const gameData = docSnap.data();
-          console.log('📥 Game data updated:', gameData);
           setCurrentGame(gameData);
           
-          // Check if current user is admin
-          if (currentUser && gameData.adminId === currentUser.uid) {
-            setIsAdmin(true);
-          }
-
           // If player view, load their board
           if (playerId && gameData.players && gameData.players[playerId]) {
             const player = gameData.players[playerId];
@@ -346,25 +453,133 @@ const IcebreakerBingo = () => {
       },
       (error) => {
         console.error('❌ Error listening to game:', error);
-        setError('Failed to load game: ' + error.message);
       }
     );
 
     return () => unsubscribe();
-  }, [currentGameId, currentUser, playerId]);
+  }, [currentGameId, playerId]);
 
+  // ===========================================
+  // HELPER FUNCTIONS
+  // ===========================================
+  
+  /**
+   * Loads all games created by the specified admin
+   * @param {string} adminId - Firebase UID of the admin
+   */
+  const loadMyGames = async (adminId) => {
+    try {
+      const gamesRef = collection(db, 'games');
+      const q = query(gamesRef, where('adminId', '==', adminId));
+      const querySnapshot = await getDocs(q);
+      
+      const games = [];
+      querySnapshot.forEach((doc) => {
+        games.push({ id: doc.id, ...doc.data() });
+      });
+      
+      setMyGames(games);
+      console.log('✅ Loaded games:', games.length);
+    } catch (err) {
+      console.error('❌ Error loading games:', err);
+    }
+  };
+
+  // ===========================================
+  // AUTHENTICATION FUNCTIONS
+  // ===========================================
+  
+  /**
+   * Handles admin login with email and password
+   * On success, Firebase auth state change triggers navigation to dashboard
+   */
+  const handleAdminLogin = async () => {
+    setLoading(true);
+    setError('');
+
+    console.log('🔐 Attempting login with:', adminEmail);
+
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, adminEmail, adminPassword);
+      console.log('✅ Admin logged in successfully:', userCredential.user.email);
+      console.log('🔑 User UID:', userCredential.user.uid);
+      setAdminEmail('');
+      setAdminPassword('');
+      
+      // Explicitly navigate to dashboard after successful login
+      console.log('📍 Forcing navigation to adminDashboard');
+      setIsAdmin(true);
+      setView('adminDashboard');
+      await loadMyGames(userCredential.user.uid);
+    } catch (err) {
+      console.error('❌ Login error:', err);
+      console.error('Error code:', err.code);
+      console.error('Error message:', err.message);
+      
+      // More specific error messages
+      if (err.code === 'auth/user-not-found') {
+        setError('No account found with this email');
+      } else if (err.code === 'auth/wrong-password') {
+        setError('Incorrect password');
+      } else if (err.code === 'auth/invalid-email') {
+        setError('Invalid email format');
+      } else if (err.code === 'auth/too-many-requests') {
+        setError('Too many failed attempts. Try again later');
+      } else {
+        setError(translations[language].loginError + ': ' + err.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
+   * Logs out the admin and returns to landing page
+   * Clears all admin-related state
+   */
+  const handleAdminLogout = async () => {
+    try {
+      await signOut(auth);
+      setIsAdmin(false);
+      setMyGames([]);
+      setCurrentGameId(null);
+      setCurrentGame(null);
+      setView('landing');
+      console.log('✅ Admin logged out');
+    } catch (err) {
+      console.error('❌ Logout error:', err);
+    }
+  };
+
+  // ===========================================
+  // GAME MANAGEMENT FUNCTIONS
+  // ===========================================
+  
+  /**
+   * Generates a random 6-character game code
+   * @returns {string} Uppercase alphanumeric code (e.g., "ABC123")
+   */
   const generateGameCode = () => {
     return Math.random().toString(36).substring(2, 8).toUpperCase();
   };
 
+  /**
+   * Generates a random 5x5 bingo board from statements
+   * @param {string} lang - Language code ('en' or 'no')
+   * @returns {Array} Array of 25 random statements
+   */
   const generateBoard = (lang) => {
     const shuffled = [...statements[lang]].sort(() => Math.random() - 0.5);
     return shuffled.slice(0, 25);
   };
 
+  /**
+   * Creates a new game in Firestore
+   * @param {string} gameName - Display name for the game
+   */
   const createGame = async (gameName) => {
-    if (!currentUser) {
-      setError('Not authenticated');
+    if (!currentUser || !isAdmin) {
+      setError('Admin access required');
       return;
     }
 
@@ -380,16 +595,16 @@ const IcebreakerBingo = () => {
         name: gameName,
         language: language,
         adminId: currentUser.uid,
+        adminEmail: currentUser.email,
         players: {},
+        status: 'active', // 'active' or 'ended'
         createdAt: serverTimestamp()
       };
 
       await setDoc(doc(db, 'games', gameCode), gameData);
-      console.log('✅ Game created successfully in Firestore');
+      console.log('✅ Game created successfully');
 
-      setCurrentGameId(gameCode);
-      setIsAdmin(true);
-      setView('admin');
+      await loadMyGames(currentUser.uid);
     } catch (err) {
       console.error('❌ Error creating game:', err);
       setError('Failed to create game: ' + err.message);
@@ -398,16 +613,90 @@ const IcebreakerBingo = () => {
     }
   };
 
-  const joinGame = async (gameCode, name) => {
-    if (!currentUser) {
-      setError('Not authenticated');
+  /**
+   * Navigates to the game view for admins
+   * Loads initial game data before switching view
+   * @param {string} gameId - Game code to view
+   */
+  const viewGame = async (gameId) => {
+    console.log('🎮 Opening game view:', gameId);
+    try {
+      // Load game data first
+      const gameRef = doc(db, 'games', gameId);
+      const gameSnap = await getDoc(gameRef);
+      
+      if (gameSnap.exists()) {
+        setCurrentGame(gameSnap.data());
+        setCurrentGameId(gameId);
+        setView('adminGameView');
+        console.log('✅ Game loaded, switching to admin view');
+      } else {
+        console.error('❌ Game not found');
+        setError('Game not found');
+      }
+    } catch (err) {
+      console.error('❌ Error loading game:', err);
+      setError('Failed to load game');
+    }
+  };
+
+  /**
+   * Ends a game (closes it to new players but preserves data)
+   * @param {string} gameId - Game code to end
+   */
+  const endGame = async (gameId) => {
+    if (!window.confirm(translations[language].confirmEndGame)) {
       return;
     }
 
+    try {
+      await updateDoc(doc(db, 'games', gameId), {
+        status: 'ended',
+        endedAt: serverTimestamp()
+      });
+      console.log('✅ Game ended');
+      await loadMyGames(currentUser.uid);
+    } catch (err) {
+      console.error('❌ Error ending game:', err);
+      setError('Failed to end game');
+    }
+  };
+
+  /**
+   * Permanently deletes a game and all its data
+   * @param {string} gameId - Game code to delete
+   */
+  const deleteGame = async (gameId) => {
+    if (!window.confirm(translations[language].confirmDelete)) {
+      return;
+    }
+
+    try {
+      await deleteDoc(doc(db, 'games', gameId));
+      console.log('✅ Game deleted');
+      await loadMyGames(currentUser.uid);
+    } catch (err) {
+      console.error('❌ Error deleting game:', err);
+      setError('Failed to delete game');
+    }
+  };
+
+  /**
+   * Allows a player to join a game anonymously
+   * Creates a unique player entry with a randomized board
+   * @param {string} gameCode - Game code to join
+   * @param {string} name - Player's display name
+   */
+  const joinGameAsPlayer = async (gameCode, name) => {
     setLoading(true);
     setError('');
 
     try {
+      // Sign in anonymously for players
+      if (!currentUser) {
+        await signInAnonymously(auth);
+      }
+
       console.log('🔍 Looking for game:', gameCode);
       const gameRef = doc(db, 'games', gameCode);
       const gameSnap = await getDoc(gameRef);
@@ -418,15 +707,23 @@ const IcebreakerBingo = () => {
         return;
       }
 
+      const game = gameSnap.data();
+
+      // Check if game has ended
+      if (game.status === 'ended') {
+        setError(language === 'en' ? 'This game has ended and is no longer accepting players.' : 'Dette spillet er avsluttet og tar ikke lenger imot spillere.');
+        setLoading(false);
+        return;
+      }
+
       if (!name.trim()) {
         setError(translations[language].nameRequired);
         setLoading(false);
         return;
       }
 
-      const gameData = gameSnap.data();
       const newPlayerId = Date.now().toString();
-      const board = generateBoard(gameData.language);
+      const board = generateBoard(game.language);
 
       const newPlayer = {
         id: newPlayerId,
@@ -438,7 +735,6 @@ const IcebreakerBingo = () => {
 
       console.log('👤 Joining game as:', name.trim());
 
-      // Update game with new player
       await updateDoc(gameRef, {
         [`players.${newPlayerId}`]: newPlayer
       });
@@ -450,8 +746,25 @@ const IcebreakerBingo = () => {
       setPlayerId(newPlayerId);
       setPlayerBoard(board);
       setPlayerNames({});
-      setLanguage(gameData.language);
-      setView('player');
+      setLanguage(game.language);
+      setView('playerGame');
+      
+      // Save player session to sessionStorage (works in private mode)
+      const playerSession = {
+        gameId: gameCode,
+        playerName: name.trim(),
+        playerId: newPlayerId,
+        playerBoard: board,
+        playerNames: {},
+        language: game.language,
+        timestamp: new Date().toISOString()
+      };
+      sessionStorage.setItem('playerSession', JSON.stringify(playerSession));
+      console.log('💾 Player session saved to sessionStorage');
+      
+      // Update URL to include game and player parameters
+      window.history.replaceState({}, '', `?game=${gameCode}&player=${newPlayerId}`);
+      console.log('🔗 URL updated to include player session');
     } catch (err) {
       console.error('❌ Error joining game:', err);
       setError('Failed to join game: ' + err.message);
@@ -460,6 +773,15 @@ const IcebreakerBingo = () => {
     }
   };
 
+  // ===========================================
+  // PLAYER GAME FUNCTIONS
+  // ===========================================
+  
+  /**
+   * Updates player's progress (filled squares) in Firestore
+   * Also updates sessionStorage
+   * @param {Object} names - Object mapping square index to names {0: "John", 5: "Jane"}
+   */
   const updatePlayerProgress = async (names) => {
     if (!currentGameId || !playerId) return;
 
@@ -468,13 +790,28 @@ const IcebreakerBingo = () => {
       await updateDoc(gameRef, {
         [`players.${playerId}.names`]: names
       });
-      console.log('✅ Progress updated');
+      
+      // Update sessionStorage
+      const savedSession = sessionStorage.getItem('playerSession');
+      if (savedSession) {
+        const session = JSON.parse(savedSession);
+        session.playerNames = names;
+        sessionStorage.setItem('playerSession', JSON.stringify(session));
+      }
     } catch (err) {
       console.error('❌ Error updating progress:', err);
     }
   };
 
-  const toggleSquare = (index, name) => {
+  /**
+   * Handles input in a bingo square
+   * Validates for duplicate names and updates Firestore
+   * Only updates Firestore when input loses focus (onBlur)
+   * @param {number} index - Square index (0-24)
+   * @param {string} name - Name to enter in square
+   * @param {boolean} shouldUpdate - Whether to update Firestore (true on blur, false on change)
+   */
+  const toggleSquare = (index, name, shouldUpdate = false) => {
     const trimmedName = name.trim();
     
     if (!trimmedName) {
@@ -482,7 +819,9 @@ const IcebreakerBingo = () => {
       delete newNames[index];
       setPlayerNames(newNames);
       setDuplicateWarning('');
-      updatePlayerProgress(newNames);
+      if (shouldUpdate) {
+        updatePlayerProgress(newNames);
+      }
       return;
     }
     
@@ -502,9 +841,19 @@ const IcebreakerBingo = () => {
     const newNames = { ...playerNames, [index]: trimmedName };
     setPlayerNames(newNames);
     setDuplicateWarning('');
-    updatePlayerProgress(newNames);
+    
+    // Only update Firestore when shouldUpdate is true (on blur)
+    if (shouldUpdate) {
+      updatePlayerProgress(newNames);
+    }
   };
 
+  /**
+   * Checks if a player has achieved bingo (5 in a row)
+   * Checks all rows, columns, and diagonals
+   * @param {Object} names - Filled squares {index: name}
+   * @returns {boolean} True if player has bingo
+   */
   const checkWin = (names) => {
     const filled = Object.keys(names).map(k => parseInt(k));
     
@@ -530,13 +879,40 @@ const IcebreakerBingo = () => {
     return false;
   };
 
+  // ===========================================
+  // UTILITY FUNCTIONS
+  // ===========================================
+  
+  /**
+   * Copies the direct game URL to clipboard
+   * Format: https://yoursite.com?game=ABC123
+   */
   const copyGameLink = () => {
-    const link = `Game Code: ${currentGameId}\nJoin at: ${window.location.origin}`;
+    const link = `${window.location.origin}?game=${currentGameId}`;
     navigator.clipboard.writeText(link);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
+  /**
+   * Copies a game link for a specific game (used in dashboard list)
+   * @param {string} gameId - Game code to create link for
+   */
+  const copySpecificGameLink = (gameId) => {
+    const link = `${window.location.origin}?game=${gameId}`;
+    navigator.clipboard.writeText(link);
+    // Show temporary feedback
+    const temp = document.getElementById(`copy-${gameId}`);
+    if (temp) {
+      temp.textContent = '✓';
+      setTimeout(() => temp.textContent = '', 2000);
+    }
+  };
+
+  /**
+   * Generates a new random board for the current player
+   * Clears all filled squares
+   */
   const generateNewBoard = async () => {
     if (!currentGame || !playerId || !currentGameId) return;
     
@@ -552,67 +928,190 @@ const IcebreakerBingo = () => {
         [`players.${playerId}.board`]: newBoard,
         [`players.${playerId}.names`]: newNames
       });
-      console.log('✅ New board generated');
     } catch (err) {
       console.error('❌ Error generating new board:', err);
     }
   };
 
-  const deleteGame = async () => {
-    if (!currentGameId || !isAdmin) return;
-    
-    if (!window.confirm(translations[language].confirmDelete)) {
+  /**
+   * Player leaves the game and returns to join screen
+   * Removes player from the game in Firestore
+   * Signs out anonymous user and clears session
+   */
+  const leaveGame = async () => {
+    if (!window.confirm(translations[language].confirmLeaveGame)) {
       return;
     }
 
     try {
-      await deleteDoc(doc(db, 'games', currentGameId));
-      console.log('✅ Game deleted');
-      goBackToMenu();
+      // Remove player from Firestore
+      if (currentGameId && playerId) {
+        console.log('🗑️ Removing player from game:', playerId);
+        const gameRef = doc(db, 'games', currentGameId);
+        const gameSnap = await getDoc(gameRef);
+        
+        if (gameSnap.exists()) {
+          const gameData = gameSnap.data();
+          const updatedPlayers = { ...gameData.players };
+          delete updatedPlayers[playerId];
+          
+          await updateDoc(gameRef, {
+            players: updatedPlayers
+          });
+          console.log('✅ Player removed from Firestore');
+        }
+      }
     } catch (err) {
-      console.error('❌ Error deleting game:', err);
-      setError('Failed to delete game: ' + err.message);
+      console.error('❌ Error removing player:', err);
     }
-  };
 
-  const goBackToMenu = () => {
-    setView('menu');
+    setView('playerJoin');
     setCurrentGameId(null);
     setCurrentGame(null);
     setPlayerName('');
     setPlayerId(null);
-    setIsAdmin(false);
-    setError('');
+    setPlayerBoard([]);
+    setPlayerNames({});
+    
+    // Clear player session from sessionStorage
+    sessionStorage.removeItem('playerSession');
+    console.log('🗑️ Player session cleared');
+    
+    // Clear URL parameters
+    window.history.replaceState({}, '', window.location.pathname);
+    
+    // Sign out anonymous user
+    if (currentUser && !currentUser.email) {
+      await signOut(auth);
+    }
   };
 
+  // Get translations for current language
   const t = translations[language];
 
-  // Loading state
-  if (!currentUser) {
+  // ===========================================
+  // DIAGNOSTIC COMPONENT (Temporary - for debugging)
+  // ===========================================
+  // TODO: Remove this component after deployment
+  const DiagnosticInfo = () => (
+    <div className="fixed bottom-4 right-4 bg-black bg-opacity-80 text-white p-4 rounded-lg text-xs font-mono max-w-sm">
+      <div className="font-bold mb-2 text-yellow-300">🔧 Debug Info:</div>
+      <div>Current View: <span className="text-green-300">{view}</span></div>
+      <div>URL Search: <span className="text-green-300">{window.location.search || '(empty)'}</span></div>
+      <div>Game Code from URL: <span className="text-green-300">{prefilledGameCode || '(none)'}</span></div>
+      <div>Is Admin: <span className="text-green-300">{isAdmin ? 'Yes' : 'No'}</span></div>
+      <div>Current User: <span className="text-green-300">{currentUser ? (currentUser.email || 'Anonymous') : 'None'}</span></div>
+      <div>Loading: <span className="text-green-300">{loading ? 'Yes' : 'No'}</span></div>
+    </div>
+  );
+
+  // ===========================================
+  // VIEW: LANDING PAGE
+  // ===========================================
+  // Main entry point with two options:
+  // 1. Admin Login - for game creators
+  // 2. Join as Player - for participants
+  if (view === 'landing') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 flex items-center justify-center">
-        <div className="bg-white rounded-lg shadow-xl p-8 text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">{t.signIn}</p>
+      <div className="min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-4 flex items-center justify-center">
+        <DiagnosticInfo />
+        <div className="max-w-4xl w-full">
+          {/* User Status Bar */}
+          {currentUser && currentUser.email && (
+            <div className="mb-6 bg-white bg-opacity-20 backdrop-blur-sm rounded-lg p-4 text-white">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="bg-green-500 w-3 h-3 rounded-full"></div>
+                  <span>Logged in as: <strong>{currentUser.email}</strong></span>
+                </div>
+                <button
+                  onClick={handleAdminLogout}
+                  className="flex items-center gap-2 px-4 py-2 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-lg transition-colors"
+                >
+                  <LogOut size={16} />
+                  <span className="font-medium">{t.logout}</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="text-center mb-12">
+            <h1 className="text-6xl font-bold text-white mb-4">{t.appTitle}</h1>
+            <p className="text-2xl text-indigo-100">{t.tagline}</p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* Admin Login Card */}
+            <div 
+              onClick={() => {
+                if (isAdmin) {
+                  setView('adminDashboard');
+                } else {
+                  setView('adminLogin');
+                }
+              }}
+              className="bg-white rounded-2xl shadow-2xl p-8 cursor-pointer transform transition-all hover:scale-105 hover:shadow-3xl"
+            >
+              <div className="text-center">
+                <div className="bg-indigo-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                  {isAdmin ? <User size={40} className="text-indigo-600" /> : <LogIn size={40} className="text-indigo-600" />}
+                </div>
+                <h2 className="text-2xl font-bold text-gray-800 mb-3">
+                  {isAdmin ? 'Admin Dashboard' : t.adminLogin}
+                </h2>
+                <p className="text-gray-600">
+                  {isAdmin ? 'Manage your games' : 'Create and manage games'}
+                </p>
+              </div>
+            </div>
+
+            {/* Player Join Card */}
+            <div 
+              onClick={() => setView('playerJoin')}
+              className="bg-white rounded-2xl shadow-2xl p-8 cursor-pointer transform transition-all hover:scale-105 hover:shadow-3xl"
+            >
+              <div className="text-center">
+                <div className="bg-green-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Users size={40} className="text-green-600" />
+                </div>
+                <h2 className="text-2xl font-bold text-gray-800 mb-3">{t.participate}</h2>
+                <p className="text-gray-600">Join a game with code</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Language Toggle */}
+          <div className="text-center mt-8">
+            <button
+              onClick={() => setLanguage(language === 'en' ? 'no' : 'en')}
+              className="flex items-center gap-2 px-6 py-3 bg-white bg-opacity-20 hover:bg-opacity-30 text-white rounded-lg transition-colors mx-auto"
+            >
+              <Globe size={20} />
+              <span className="font-medium">{language === 'en' ? 'Norsk' : 'English'}</span>
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // Menu View
-  if (view === 'menu') {
+  // ===========================================
+  // VIEW: ADMIN LOGIN
+  // ===========================================
+  // Email/password login form for administrators
+  if (view === 'adminLogin') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 md:p-8">
-        <div className="max-w-2xl mx-auto">
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 flex items-center justify-center">
+        <DiagnosticInfo />
+        <div className="max-w-md w-full">
           <div className="bg-white rounded-lg shadow-xl p-8">
             <div className="flex justify-between items-center mb-6">
-              <h1 className="text-4xl font-bold text-indigo-600">{t.title}</h1>
+              <h1 className="text-3xl font-bold text-indigo-600">{t.adminLogin}</h1>
               <button
-                onClick={() => setLanguage(language === 'en' ? 'no' : 'en')}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                onClick={() => setView('landing')}
+                className="text-gray-600 hover:text-gray-800"
               >
-                <Globe size={20} />
-                <span className="font-medium">{language === 'en' ? 'NO' : 'EN'}</span>
+                ✕
               </button>
             </div>
 
@@ -622,65 +1121,46 @@ const IcebreakerBingo = () => {
               </div>
             )}
 
-            <div className="space-y-4">
-              <div className="border-2 border-gray-200 rounded-lg p-6">
-                <h2 className="text-xl font-semibold mb-4">{t.createGame}</h2>
+            <div>
+              <div className="mb-4">
+                <label className="block text-gray-700 mb-2">{t.email}</label>
                 <input
-                  type="text"
-                  placeholder={t.gameName}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  type="email"
+                  value={adminEmail}
+                  onChange={(e) => setAdminEmail(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  disabled={loading}
                   onKeyPress={(e) => {
-                    if (e.key === 'Enter' && e.target.value.trim() && !loading) {
-                      createGame(e.target.value.trim());
+                    if (e.key === 'Enter' && adminEmail && adminPassword) {
+                      handleAdminLogin();
                     }
                   }}
-                  id="gameName"
-                  disabled={loading}
                 />
-                <button
-                  onClick={() => {
-                    const input = document.getElementById('gameName');
-                    if (input.value.trim() && !loading) {
-                      createGame(input.value.trim());
-                    }
-                  }}
-                  disabled={loading}
-                  className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium disabled:bg-gray-400"
-                >
-                  {loading ? t.loading : t.create}
-                </button>
               </div>
 
-              <div className="border-2 border-gray-200 rounded-lg p-6">
-                <h2 className="text-xl font-semibold mb-4">{t.joinGame}</h2>
+              <div className="mb-6">
+                <label className="block text-gray-700 mb-2">{t.password}</label>
                 <input
-                  type="text"
-                  placeholder={t.enterGameCode}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase"
-                  id="joinGameCode"
+                  type="password"
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   disabled={loading}
-                />
-                <input
-                  type="text"
-                  placeholder={t.yourName}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  id="joinPlayerName"
-                  disabled={loading}
-                />
-                <button
-                  onClick={() => {
-                    const code = document.getElementById('joinGameCode').value.trim().toUpperCase();
-                    const name = document.getElementById('joinPlayerName').value.trim();
-                    if (code && name && !loading) {
-                      joinGame(code, name);
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && adminEmail && adminPassword) {
+                      handleAdminLogin();
                     }
                   }}
-                  disabled={loading}
-                  className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:bg-gray-400"
-                >
-                  {loading ? t.loading : t.join}
-                </button>
+                />
               </div>
+
+              <button
+                onClick={handleAdminLogin}
+                disabled={loading}
+                className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium disabled:bg-gray-400"
+              >
+                {loading ? t.loading : t.login}
+              </button>
             </div>
           </div>
         </div>
@@ -688,18 +1168,22 @@ const IcebreakerBingo = () => {
     );
   }
 
-  // Admin View
-  if (view === 'admin' && currentGame) {
-    const players = Object.values(currentGame.players || {});
-
+  // ===========================================
+  // VIEW: ADMIN DASHBOARD
+  // ===========================================
+  // Shows all games created by this admin
+  // Allows creating new games and managing existing ones
+  if (view === 'adminDashboard') {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 md:p-8">
+        <DiagnosticInfo />
         <div className="max-w-6xl mx-auto">
+          {/* Header */}
           <div className="bg-white rounded-lg shadow-xl p-6 mb-6">
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex justify-between items-center">
               <div>
-                <h1 className="text-3xl font-bold text-indigo-600">{t.adminPanel}</h1>
-                <p className="text-gray-600 mt-1">{currentGame.name}</p>
+                <h1 className="text-3xl font-bold text-indigo-600">{t.myGames}</h1>
+                <p className="text-gray-600 mt-1">Welcome, {currentUser?.email}</p>
               </div>
               <div className="flex gap-3">
                 <button
@@ -709,29 +1193,193 @@ const IcebreakerBingo = () => {
                   <Globe size={20} />
                   <span className="font-medium">{language === 'en' ? 'NO' : 'EN'}</span>
                 </button>
-                {isAdmin && (
-                  <button
-                    onClick={deleteGame}
-                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                  >
-                    {t.deleteGame}
-                  </button>
-                )}
                 <button
-                  onClick={goBackToMenu}
-                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                  onClick={handleAdminLogout}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
                 >
-                  {t.backToMenu}
+                  <LogOut size={20} />
+                  <span className="font-medium">{t.logout}</span>
                 </button>
               </div>
             </div>
+          </div>
 
-            <div className="bg-indigo-50 border-2 border-indigo-200 rounded-lg p-4 mb-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600">{t.gameCode}</p>
-                  <p className="text-2xl font-bold text-indigo-600">{currentGameId}</p>
-                </div>
+          {/* Create New Game */}
+          <div className="bg-white rounded-lg shadow-xl p-6 mb-6">
+            <h2 className="text-xl font-semibold mb-4">{t.createNewGame}</h2>
+            <div className="flex gap-3">
+              <input
+                type="text"
+                placeholder={t.gameName}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                id="newGameName"
+                disabled={loading}
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter' && e.target.value.trim()) {
+                    createGame(e.target.value.trim());
+                    e.target.value = '';
+                  }
+                }}
+              />
+              <button
+                onClick={() => {
+                  const input = document.getElementById('newGameName');
+                  if (input.value.trim()) {
+                    createGame(input.value.trim());
+                    input.value = '';
+                  }
+                }}
+                disabled={loading}
+                className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium disabled:bg-gray-400"
+              >
+                {loading ? t.loading : t.create}
+              </button>
+            </div>
+          </div>
+
+          {/* Games List */}
+          <div className="bg-white rounded-lg shadow-xl p-6">
+            {myGames.length === 0 ? (
+              <p className="text-gray-500 text-center py-8">{t.noGames}</p>
+            ) : (
+              <div className="space-y-4">
+                {myGames.map(game => {
+                  // Default to 'active' if status doesn't exist (for older games)
+                  const gameStatus = game.status || 'active';
+                  
+                  return (
+                  <div key={game.id} className="border-2 border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-bold text-lg">{game.name}</h3>
+                          {gameStatus === 'ended' && (
+                            <span className="px-2 py-1 bg-gray-500 text-white text-xs rounded">
+                              {t.ended}
+                            </span>
+                          )}
+                          {gameStatus === 'active' && (
+                            <span className="px-2 py-1 bg-green-500 text-white text-xs rounded">
+                              {t.active}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600">
+                          {t.gameCode}: <span className="font-mono font-bold text-indigo-600">{game.id}</span>
+                        </p>
+                        <p className="text-sm text-gray-500">
+                          {Object.keys(game.players || {}).length} players
+                        </p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => copySpecificGameLink(game.id)}
+                          className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-2"
+                          title={t.copyLink}
+                        >
+                          <Copy size={16} />
+                          <span id={`copy-${game.id}`} className="text-xs"></span>
+                        </button>
+                        <button
+                          onClick={() => viewGame(game.id)}
+                          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                        >
+                          {t.viewGame}
+                        </button>
+                        {gameStatus === 'active' && (
+                          <button
+                            onClick={() => endGame(game.id)}
+                            className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors flex items-center gap-2"
+                          >
+                            <Lock size={16} />
+                            {t.endGame}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => deleteGame(game.id)}
+                          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                        >
+                          {t.deleteGame}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ===========================================
+  // VIEW: ADMIN GAME VIEW
+  // ===========================================
+  // Detailed view of a specific game
+  // Shows all players and their real-time progress
+  if (view === 'adminGameView' && currentGame) {
+    const players = Object.values(currentGame.players || {});
+    
+    // Sort players based on current sort settings
+    const sortedPlayers = [...players].sort((a, b) => {
+      if (playerSortBy === 'progress') {
+        const aProgress = Object.keys(a.names || {}).length;
+        const bProgress = Object.keys(b.names || {}).length;
+        return playerSortOrder === 'desc' ? bProgress - aProgress : aProgress - bProgress;
+      } else { // sort by name
+        const aName = (a.name || '').toLowerCase();
+        const bName = (b.name || '').toLowerCase();
+        if (playerSortOrder === 'asc') {
+          return aName.localeCompare(bName);
+        } else {
+          return bName.localeCompare(aName);
+        }
+      }
+    });
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 md:p-8">
+        <DiagnosticInfo />
+        <div className="max-w-6xl mx-auto">
+          <div className="bg-white rounded-lg shadow-xl p-6 mb-6">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h1 className="text-3xl font-bold text-indigo-600">{currentGame.name}</h1>
+                <p className="text-sm text-gray-600 mt-1">
+                  {t.gameCode}: <span className="font-mono font-bold text-indigo-600">{currentGameId}</span>
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={async () => {
+                    console.log('🔄 Manual refresh requested');
+                    setLoading(true);
+                    try {
+                      // Force reload game data
+                      const gameRef = doc(db, 'games', currentGameId);
+                      const docSnap = await getDoc(gameRef);
+                      if (docSnap.exists()) {
+                        const gameData = docSnap.data();
+                        console.log('✅ Refreshed game data, players:', Object.keys(gameData.players || {}).length);
+                        setCurrentGame(gameData);
+                      } else {
+                        console.error('❌ Game not found');
+                      }
+                    } catch (err) {
+                      console.error('❌ Refresh error:', err);
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                  disabled={loading}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-400"
+                  title={t.refresh}
+                >
+                  <Shuffle size={20} />
+                  <span className="font-medium">{loading ? t.loading : t.refresh}</span>
+                </button>
                 <button
                   onClick={copyGameLink}
                   className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
@@ -739,21 +1387,58 @@ const IcebreakerBingo = () => {
                   {copied ? <Check size={20} /> : <Copy size={20} />}
                   <span className="font-medium">{copied ? t.copied : t.copyLink}</span>
                 </button>
+                <button
+                  onClick={() => {
+                    setView('adminDashboard');
+                    setCurrentGameId(null);
+                    setCurrentGame(null);
+                  }}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  {t.backToHome}
+                </button>
               </div>
             </div>
           </div>
 
           <div className="bg-white rounded-lg shadow-xl p-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-              <Users size={24} />
-              {t.registeredPlayers} ({players.length})
-            </h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                <Users size={24} />
+                {t.registeredPlayers} ({sortedPlayers.length})
+              </h2>
+              
+              {/* Sort Controls */}
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-gray-600">{t.sortBy}</span>
+                
+                {/* Sort by selector */}
+                <select
+                  value={playerSortBy}
+                  onChange={(e) => setPlayerSortBy(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                >
+                  <option value="progress">{t.progress}</option>
+                  <option value="name">{t.name}</option>
+                </select>
+                
+                {/* Sort order selector */}
+                <select
+                  value={playerSortOrder}
+                  onChange={(e) => setPlayerSortOrder(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                >
+                  <option value="desc">{t.descending}</option>
+                  <option value="asc">{t.ascending}</option>
+                </select>
+              </div>
+            </div>
 
-            {players.length === 0 ? (
+            {sortedPlayers.length === 0 ? (
               <p className="text-gray-500 text-center py-8">{t.noPlayers}</p>
             ) : (
               <div className="space-y-4">
-                {players.map(player => {
+                {sortedPlayers.map(player => {
                   const hasBingo = checkWin(player.names || {});
                   const filledCount = Object.keys(player.names || {}).length;
 
@@ -800,91 +1485,254 @@ const IcebreakerBingo = () => {
     );
   }
 
-  // Player View
-  const hasWon = checkWin(playerNames);
+  // ===========================================
+  // VIEW: PLAYER JOIN PAGE
+  // ===========================================
+  // Form for players to enter game code and name
+  // Game code may be pre-filled from URL parameter
+  // Admins are blocked from joining as players
+  if (view === 'playerJoin') {
+    // Block admins from joining as players
+    if (isAdmin && currentUser?.email) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 flex items-center justify-center">
+          <DiagnosticInfo />
+          <div className="max-w-md w-full">
+            <div className="bg-white rounded-lg shadow-xl p-8">
+              <div className="flex justify-between items-center mb-6">
+                <h1 className="text-3xl font-bold text-orange-600">{t.adminCannotPlay}</h1>
+                <button
+                  onClick={() => setView('landing')}
+                  className="text-gray-600 hover:text-gray-800"
+                >
+                  ✕
+                </button>
+              </div>
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 md:p-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-white rounded-lg shadow-xl p-6 mb-6">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-4">
-            <div>
-              <h1 className="text-3xl md:text-4xl font-bold text-indigo-600 mb-2">
-                {t.title}
-              </h1>
-              <p className="text-gray-600">{t.subtitle}</p>
-              <p className="text-sm text-gray-500 mt-1">Playing as: <span className="font-semibold">{playerName}</span></p>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={generateNewBoard}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-              >
-                <Shuffle size={20} />
-                <span className="font-medium">{t.newGame}</span>
-              </button>
-              <button
-                onClick={goBackToMenu}
-                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-              >
-                {t.backToMenu}
-              </button>
+              <div className="mb-6 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                <p className="text-gray-700 mb-4">{t.adminPlayMessage}</p>
+                <ul className="space-y-2 text-gray-700">
+                  <li className="flex items-start gap-2">
+                    <span className="text-orange-600 font-bold">•</span>
+                    <span>{t.adminPlayStep1}</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-orange-600 font-bold">•</span>
+                    <span>{t.adminPlayStep2}</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={handleAdminLogout}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  <LogOut size={20} />
+                  <span className="font-medium">{t.logout}</span>
+                </button>
+                <button
+                  onClick={() => setView('adminDashboard')}
+                  className="flex-1 px-4 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
+                >
+                  {t.backToHome}
+                </button>
+              </div>
             </div>
           </div>
-          
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
-            {t.instructions}
-          </div>
-
-          {duplicateWarning && (
-            <div className="mt-3 bg-yellow-100 border border-yellow-400 rounded-lg p-3 text-sm text-yellow-800 font-medium">
-              ⚠️ {duplicateWarning}
-            </div>
-          )}
         </div>
+      );
+    }
 
-        {hasWon && (
-          <div className="bg-green-500 text-white text-center py-4 rounded-lg shadow-lg mb-6 text-2xl font-bold animate-pulse">
-            🎉 {t.winMessage} 🎉
-          </div>
-        )}
-
-        <div className="bg-white rounded-lg shadow-xl p-4 md:p-6">
-          <div className="grid grid-cols-5 gap-2 md:gap-3">
-            {playerBoard.map((statement, index) => (
-              <div
-                key={index}
-                className={`
-                  aspect-square rounded-lg text-xs md:text-sm font-medium
-                  transition-all duration-200 border-2 p-2
-                  ${playerNames[index]
-                    ? 'bg-indigo-600 border-indigo-700 shadow-lg'
-                    : 'bg-white border-gray-300'
-                  }
-                  flex flex-col items-center justify-center text-center gap-1
-                `}
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 flex items-center justify-center">
+        <DiagnosticInfo />
+        <div className="max-w-md w-full">
+          <div className="bg-white rounded-lg shadow-xl p-8">
+            <div className="flex justify-between items-center mb-6">
+              <h1 className="text-3xl font-bold text-indigo-600">{t.participate}</h1>
+              <button
+                onClick={() => {
+                  setView('landing');
+                  setPrefilledGameCode(null);
+                  // Clear URL parameter
+                  window.history.replaceState({}, '', window.location.pathname);
+                }}
+                className="text-gray-600 hover:text-gray-800"
               >
-                <div className={`${playerNames[index] ? 'text-white' : 'text-gray-700'} leading-tight`}>
-                  {statement}
-                </div>
+                ✕
+              </button>
+            </div>
+
+            {error && (
+              <div className="mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                {error}
+              </div>
+            )}
+
+            {prefilledGameCode && (
+              <div className="mb-4 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded text-sm">
+                ✓ Game code detected: <strong>{prefilledGameCode}</strong>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-gray-700 mb-2">{t.enterGameCode}</label>
                 <input
                   type="text"
-                  value={playerNames[index] || ''}
-                  onChange={(e) => toggleSquare(index, e.target.value)}
-                  placeholder="Name"
-                  className="w-full px-1 py-0.5 text-xs text-center border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-900"
+                  placeholder="ABC123"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase"
+                  id="playerGameCode"
+                  disabled={loading}
+                  defaultValue={prefilledGameCode || ''}
                 />
               </div>
-            ))}
+
+              <div>
+                <label className="block text-gray-700 mb-2">{t.yourName}</label>
+                <input
+                  type="text"
+                  placeholder={t.yourName}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  id="playerNameInput"
+                  disabled={loading}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      const code = document.getElementById('playerGameCode').value.trim().toUpperCase();
+                      const name = e.target.value.trim();
+                      if (code && name) {
+                        joinGameAsPlayer(code, name);
+                      }
+                    }
+                  }}
+                />
+              </div>
+
+              <button
+                onClick={() => {
+                  const code = document.getElementById('playerGameCode').value.trim().toUpperCase();
+                  const name = document.getElementById('playerNameInput').value.trim();
+                  if (code && name) {
+                    joinGameAsPlayer(code, name);
+                  }
+                }}
+                disabled={loading}
+                className="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:bg-gray-400"
+              >
+                {loading ? t.loading : t.join}
+              </button>
+            </div>
+
+            <div className="mt-6 text-center">
+              <button
+                onClick={() => setLanguage(language === 'en' ? 'no' : 'en')}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors mx-auto"
+              >
+                <Globe size={20} />
+                <span className="font-medium">{language === 'en' ? 'NO' : 'EN'}</span>
+              </button>
+            </div>
           </div>
         </div>
+      </div>
+    );
+  }
 
-        <div className="mt-6 text-center text-sm text-gray-600">
-          <p>{t.filled}: {Object.keys(playerNames).length} / 25</p>
+  // ===========================================
+  // VIEW: PLAYER GAME
+  // ===========================================
+  // The actual bingo game interface for players
+  // Shows 5x5 grid with input fields for names
+  if (view === 'playerGame') {
+    const hasWon = checkWin(playerNames);
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4 md:p-8">
+        <DiagnosticInfo />
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white rounded-lg shadow-xl p-6 mb-6">
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-4">
+              <div>
+                <h1 className="text-3xl md:text-4xl font-bold text-indigo-600 mb-2">
+                  {t.appTitle}
+                </h1>
+                <p className="text-gray-600">{t.subtitle}</p>
+                <p className="text-sm text-gray-500 mt-1">{t.playingAs}: <span className="font-semibold">{playerName}</span></p>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={generateNewBoard}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                >
+                  <Shuffle size={20} />
+                  <span className="font-medium">{t.newBoard}</span>
+                </button>
+                <button
+                  onClick={leaveGame}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  {t.backToMenu}
+                </button>
+              </div>
+            </div>
+            
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+              {t.instructions}
+            </div>
+
+            {duplicateWarning && (
+              <div className="mt-3 bg-yellow-100 border border-yellow-400 rounded-lg p-3 text-sm text-yellow-800 font-medium">
+                ⚠️ {duplicateWarning}
+              </div>
+            )}
+          </div>
+
+          {hasWon && (
+            <div className="bg-green-500 text-white text-center py-4 rounded-lg shadow-lg mb-6 text-2xl font-bold animate-pulse">
+              🎉 {t.winMessage} 🎉
+            </div>
+          )}
+
+          <div className="bg-white rounded-lg shadow-xl p-4 md:p-6">
+            <div className="grid grid-cols-5 gap-2 md:gap-3">
+              {playerBoard.map((statement, index) => (
+                <div
+                  key={index}
+                  className={`
+                    aspect-square rounded-lg text-xs md:text-sm font-medium
+                    transition-all duration-200 border-2 p-2
+                    ${playerNames[index]
+                      ? 'bg-indigo-600 border-indigo-700 shadow-lg'
+                      : 'bg-white border-gray-300'
+                    }
+                    flex flex-col items-center justify-center text-center gap-1
+                  `}
+                >
+                  <div className={`${playerNames[index] ? 'text-white' : 'text-gray-700'} leading-tight`}>
+                    {statement}
+                  </div>
+                  <input
+                    type="text"
+                    value={playerNames[index] || ''}
+                    onChange={(e) => toggleSquare(index, e.target.value)}
+                    placeholder="Name"
+                    className="w-full px-1 py-0.5 text-xs text-center border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-gray-900"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-6 text-center text-sm text-gray-600">
+            <p>{t.filled}: {Object.keys(playerNames).length} / 25</p>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  return null;
 };
 
 export default IcebreakerBingo;
