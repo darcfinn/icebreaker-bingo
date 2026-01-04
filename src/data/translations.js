@@ -53,12 +53,67 @@ export const translations = {
     adminPlayStep1: "1. Log out from your admin account, or",
     adminPlayStep2: "2. Open this page in a private/incognito window",
     confirmLeaveGame: "Are you sure you want to leave this game? Your progress will be lost.",
+    duplicateWarning: "is already used in another square!",
     refresh: "Refresh",
     sortBy: "Sort by:",
     progress: "Progress",
     name: "Name",
     ascending: "↑ Low to High",
-    descending: "↓ High to Low"
+    descending: "↓ High to Low",
+    duplicateNameHint: "The field will be cleared when you click away.",
+
+
+     // Player Join - Game Info
+    gameLanguage: "Game language",
+    status: "Status",
+    gameHasEnded: "This game has ended",
+    loadingGameInfo: "Loading game info...",
+    gameCodeDetected: "Game code detected",
+
+
+    // Game Status
+    pending: "Pending",
+    active: "Active", 
+    ended: "Ended",
+    
+    // Waiting Room
+    waitingRoomTitle: "Get Ready!",
+    waitingRoomSubtitle: "Waiting for game to start",
+    waitingRoomInstructions: "The admin will start the game soon. Stay on this page!",
+    waitingRoomFooter: "You can see your bingo board, but you can't fill it yet.",
+    playersWaiting: "Players waiting",
+    
+    // Waiting Steps
+    waitingStep1: "The admin is reviewing who has joined",
+    waitingStep2: "When everyone is ready, the admin will click 'Start Game'",
+    waitingStep3: "Your board will unlock and you can start playing!",
+    
+    // Admin Actions
+    startGame: "Start Game",
+    startGameConfirm: "Start the game now? All players will be able to begin filling their boards.",
+    gameStarted: "Game Started! Players can now fill their boards.",
+    
+    // Player Notifications
+    gameHasStarted: "🎉 Game Started! You can now fill in names.",
+    gameNotStarted: "Game hasn't started yet. Please wait...",
+
+    // Admin Game View - Player Count Info
+    player: "Player",
+    players: "Players",
+    language: "Language",
+    
+    // Admin Game View - Validation Messages
+    startGameFewPlayersWarning: "Warning: Only {count} player(s) have joined. The game will be very difficult to complete with so few players. Do you want to start anyway?",
+    
+    // Admin Game View - Status Banners
+    noPlayersYet: "No players yet",
+    shareGameCode: "Share the game code with participants. They need to join before you can start the game.",
+    fewPlayers: "Few players",
+    fewPlayersMessage: "With only {count} player(s), completing the bingo will be very difficult. Consider waiting for more players to join.",
+    readyToStart: "Ready to start!",
+    readyToStartMessage: "{count} players are waiting. Click \"Start Game\" when everyone is ready.",
+    cannotStartNoPlayers: "Cannot start game: No players have joined yet. Share the game code and wait for players to join.",
+    shareCodeToStart: "Share the game code with participants to get started"
   },
   no: {
     appTitle: "Icebreaker Bingo",
@@ -107,11 +162,66 @@ export const translations = {
     adminPlayStep1: "1. Logg ut fra administratorkontoen din, eller",
     adminPlayStep2: "2. Åpne denne siden i et privat/inkognito vindu",
     confirmLeaveGame: "Er du sikker på at du vil forlate dette spillet? Fremgangen din vil gå tapt.",
+    duplicateWarning: "er allerede brukt i en annen rute!",
     refresh: "Oppdater",
     sortBy: "Sorter etter:",
     progress: "Fremgang",
     name: "Navn",
     ascending: "↑ Lav til Høy",
-    descending: "↓ Høy til Lav"
+    descending: "↓ Høy til Lav",
+    duplicateNameHint: "Feltet blir tømt når du klikker utenfor.",
+
+    // Player Join - Game Info
+    gameLanguage: "Spillspråk",
+    status: "Status",
+    gameHasEnded: "Dette spillet er avsluttet",
+    loadingGameInfo: "Laster spillinfo...",
+    gameCodeDetected: "Spillkode oppdaget",
+
+
+    // Game Status
+    pending: "Venter",
+    active: "Aktiv",
+    ended: "Avsluttet",
+    
+    // Waiting Room
+    waitingRoomTitle: "Gjør deg klar!",
+    waitingRoomSubtitle: "Venter på at spillet starter",
+    waitingRoomInstructions: "Administratoren vil starte spillet snart. Bli på denne siden!",
+    waitingRoomFooter: "Du kan se bingobrettet ditt, men du kan ikke fylle det ennå.",
+    playersWaiting: "Spillere som venter",
+    
+    // Waiting Steps
+    waitingStep1: "Administratoren ser over hvem som har blitt med",
+    waitingStep2: "Når alle er klare, vil administratoren klikke 'Start spill'",
+    waitingStep3: "Brettet ditt låses opp og du kan begynne å spille!",
+    
+    // Admin Actions
+    startGame: "Start spill",
+    startGameConfirm: "Start spillet nå? Alle spillere vil kunne begynne å fylle brettene sine.",
+    gameStarted: "Spillet startet! Spillere kan nå fylle brettene sine.",
+    
+    // Player Notifications
+    gameHasStarted: "🎉 Spillet startet! Du kan nå fylle inn navn.",
+    gameNotStarted: "Spillet har ikke startet ennå. Vennligst vent...",
+
+    // Admin Game View - Player Count Info
+    player: "Spiller",
+    players: "Spillere",
+    language: "Språk",
+    
+    // Admin Game View - Validation Messages
+    cannotStartNoPlayers: "Kan ikke starte spillet: Ingen spillere har blitt med ennå. Del spillkoden og vent på at spillere blir med.",
+    startGameFewPlayersWarning: "Advarsel: Bare {count} spiller(e) har blitt med. Spillet vil være veldig vanskelig å fullføre med så få spillere. Vil du starte likevel?",
+    
+    // Admin Game View - Status Banners
+    noPlayersYet: "Ingen spillere ennå",
+    shareGameCode: "Del spillkoden med deltakerne. De må bli med før du kan starte spillet.",
+    fewPlayers: "Få spillere",
+    fewPlayersMessage: "Med bare {count} spiller(e) vil det være veldig vanskelig å fullføre bingoen. Vurder å vente på flere spillere.",
+    readyToStart: "Klar til å starte!",
+    readyToStartMessage: "{count} spillere venter. Klikk \"Start spill\" når alle er klare.",
+    cannotStartNoPlayers: "Kan ikke starte spillet: Ingen spillere har blitt med ennå. Del spillkoden og vent på at spillere blir med.",
+    shareCodeToStart: "Del spillkoden med deltakerne for å komme i gang"
   }
 };

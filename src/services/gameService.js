@@ -10,6 +10,7 @@ import { db } from '../lib/firebase';
  * Handles all game-related Firestore operations:
  * - Creating games
  * - Loading games
+ * - Starting games (pending → active)
  * - Updating game status
  * - Managing players
  * - Deleting games
@@ -30,17 +31,50 @@ export const generateGameCode = () => {
  */
 export const createGame = async (gameData) => {
   const gameCode = generateGameCode();
-  console.log('📝 Creating game:', gameCode);
+  console.log('🎲 Creating game:', gameCode);
   
   await setDoc(doc(db, 'games', gameCode), {
     ...gameData,
     id: gameCode,
-    status: 'active',
-    createdAt: serverTimestamp()
+    status: 'pending',           // ✅ CHANGED: New games start as pending
+    createdAt: serverTimestamp(),
+    startedAt: null,             // ✅ ADDED: Track when game starts
+    startedBy: null              // ✅ ADDED: Track who started it
   });
   
-  console.log('✅ Game created');
+  console.log('✅ Game created with status: pending');
   return gameCode;
+};
+
+/**
+ * Start a game (transition from pending to active)
+ * @param {string} gameId - Game code
+ * @param {string} adminId - Admin's Firebase UID
+ * @returns {Promise<void>}
+ */
+export const startGame = async (gameId, adminId) => {
+  console.log('🚀 Starting game:', gameId);
+  
+  // Verify game exists and is pending
+  const gameSnap = await getDoc(doc(db, 'games', gameId));
+  if (!gameSnap.exists()) {
+    throw new Error('Game not found');
+  }
+  
+  const gameData = gameSnap.data();
+  if (gameData.status !== 'pending') {
+    console.warn('⚠️ Game is not in pending state:', gameData.status);
+    // Don't throw error, just update anyway
+  }
+  
+  // Update to active
+  await updateDoc(doc(db, 'games', gameId), {
+    status: 'active',
+    startedAt: serverTimestamp(),
+    startedBy: adminId
+  });
+  
+  console.log('✅ Game started successfully');
 };
 
 /**

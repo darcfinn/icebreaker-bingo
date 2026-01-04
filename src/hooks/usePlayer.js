@@ -10,50 +10,66 @@ import * as gameService from '../services/gameService';
  * - Duplicate name detection
  * - Win condition checking
  * - Session persistence
+ * 
+ * @param {Object} translations - Translation object
+ * @param {string} language - Current language ('en' or 'no')
  */
-export const usePlayer = () => {
+export const usePlayer = (translations = null, language = 'en') => {
   const [playerName, setPlayerName] = useState('');
   const [playerId, setPlayerId] = useState(null);
   const [playerBoard, setPlayerBoard] = useState([]);
   const [playerNames, setPlayerNames] = useState({});
-  const [duplicateWarning, setDuplicateWarning] = useState('');
+  const [duplicateWarning, setDuplicateWarning] = useState(false);
   const [playerSessionRestored, setPlayerSessionRestored] = useState(false);
 
   /**
    * Toggle a square (fill with name or clear)
+   * @param {number} index - Square index (0-24)
+   * @param {string} name - Name to fill
+   * @param {string} gameId - Current game ID
+   * @param {string} playerId - Current player ID
+   * @param {boolean} shouldUpdate - Whether to persist to Firebase
+   * @returns {boolean} - True if successful, false if duplicate
    */
   const toggleSquare = (index, name, gameId, playerId, shouldUpdate = false) => {
     const trimmed = name.trim();
     
+    // If empty, clear the square
     if (!trimmed) {
       const newNames = { ...playerNames };
       delete newNames[index];
       setPlayerNames(newNames);
-      setDuplicateWarning('');
+      setDuplicateWarning(false);
       if (shouldUpdate) {
         gameService.updatePlayerProgress(gameId, playerId, newNames);
       }
-      return;
+      return true;
     }
     
-    // Check for duplicates
+    // Check for duplicates (case-insensitive)
     const existing = Object.entries(playerNames).find(
       ([idx, n]) => n.toLowerCase() === trimmed.toLowerCase() && parseInt(idx) !== index
     );
     
-    if (existing && shouldUpdate) {
-      setDuplicateWarning(`Warning: ${trimmed} is already used in another square!`);
-      setTimeout(() => setDuplicateWarning(''), 3000);
-      return;
+    if (existing) {
+      setDuplicateWarning(`⚠️ "${trimmed}" is already used in another square!`);
+      // Don't allow duplicate - return false to indicate failure
+      return false;
     }
     
+    // Clear any previous warning
+    setDuplicateWarning(false);
+    
+    // Update the names
     const newNames = { ...playerNames, [index]: trimmed };
     setPlayerNames(newNames);
-    setDuplicateWarning('');
     
+    // Persist to Firebase if needed
     if (shouldUpdate) {
       gameService.updatePlayerProgress(gameId, playerId, newNames);
     }
+    
+    return true;
   };
 
   /**
