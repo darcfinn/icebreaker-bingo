@@ -41,7 +41,9 @@ Reusable UI components following atomic design principles.
       DashboardWidget.jsx
 ```
 
-**Naming convention**: PascalCase for components (e.g., `UserProfile.jsx`)
+**Naming convention**: 
+- PascalCase for components (e.g., `UserProfile.jsx`)
+- Descriptive constant and variable names, minimum 5 characters
 
 #### `/src/pages` or `/src/views`
 Route-level components (each represents a page/view).
