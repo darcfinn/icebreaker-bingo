@@ -219,33 +219,35 @@ const IcebreakerBingo = () => {
    * Creates a new game in Firestore
    * @param {string} gameName - Display name for the game
    */
-	const createGame = async (gameName) => {
-	  if (!currentUser || !isAdmin) {
-	    setError('Admin access required');
-	    return;
-	  }
-	
-	  setLoading(true);
-	  setError('');
-	
-	  try {
-	    const gameCode = await gameService.createGame({
-	      name: gameName,
-	      language: language,
-	      adminId: currentUser.uid,
-	      adminEmail: currentUser.email,
-	      players: {}
-	    });
-	    
-	    console.log('✅ Game created:', gameCode);
-	    await game.loadMyGames();
-	  } catch (err) {
-	    console.error('❌ Error creating game:', err);
-	    setError('Failed to create game: ' + err.message);
-	  } finally {
-	    setLoading(false);
-	  }
-	};
+	const createGame = async (gameName, gridSize, winCondition) => {
+    if (!currentUser || !isAdmin) {
+      setError('Admin access required');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const gameCode = await gameService.createGame({
+        name: gameName,
+        language: language,
+        adminId: currentUser.uid,
+        adminEmail: currentUser.email,
+        gridSize: gridSize, 
+        winCondition: winCondition,
+        players: {}
+      });
+      
+      console.log('✅ Game created:', gameCode, `${gridSize}×${gridSize}`);
+      await game.loadMyGames();
+    } catch (err) {
+      console.error('❌ Error creating game:', err);
+      setError('Failed to create game: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   /**
    * Navigates to the game view for admins
@@ -680,9 +682,11 @@ const IcebreakerBingo = () => {
   // Shows 5x5 grid with input fields for names
   if (view === 'playerGame') {
     const hasWon = checkWin(playerNames);
-    const gameStatus = currentGame?.status || 'active';  // NEW
-    const gameName = currentGame?.name || '';  // NEW
-    const playerCount = Object.keys(currentGame?.players || {}).length;  // NEW
+    const gameStatus = currentGame?.status || 'active';
+    const gameName = currentGame?.name || '';
+    const playerCount = Object.keys(currentGame?.players || {}).length;
+    const gridSize = currentGame?.gridSize || 5;
+    const winCondition = currentGame?.winCondition || { type: 'lines', linesRequired: 1 };
 
     return (
       <PlayerGame
@@ -690,14 +694,16 @@ const IcebreakerBingo = () => {
         playerBoard={playerBoard}
         playerNames={playerNames}
         currentGameId={currentGameId}
+        gridSize={gridSize}
+        winCondition={winCondition}
         playerId={playerId}
         language={language}
         translations={translations}
         duplicateWarning={duplicateWarning}
         hasWon={hasWon}
-        gameStatus={gameStatus}        // NEW
-        gameName={gameName}            // NEW
-        playerCount={playerCount}      // NEW
+        gameStatus={gameStatus}
+        gameName={gameName}
+        playerCount={playerCount}
         onToggleSquare={toggleSquare}
         onGenerateNewBoard={generateNewBoard}
         onLeaveGame={leaveGame}

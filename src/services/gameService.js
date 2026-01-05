@@ -7,18 +7,11 @@ import { db } from '../lib/firebase';
 /**
  * Game Service
  * 
- * Handles all game-related Firestore operations:
- * - Creating games
- * - Loading games
- * - Starting games (pending → active)
- * - Updating game status
- * - Managing players
- * - Deleting games
+ * Handles all game-related Firestore operations with flexible grid support
  */
 
 /**
  * Generate a random 6-character game code
- * @returns {string} Uppercase game code (e.g., "ABC123")
  */
 export const generateGameCode = () => {
   return Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -27,35 +20,39 @@ export const generateGameCode = () => {
 /**
  * Create a new game in Firestore
  * @param {Object} gameData - Game data object
+ * @param {number} gameData.gridSize - Grid size (3, 4, or 5)
+ * @param {Object} gameData.winCondition - Win condition config
  * @returns {Promise<string>} Game code
  */
 export const createGame = async (gameData) => {
   const gameCode = generateGameCode();
   console.log('🎲 Creating game:', gameCode);
   
+  // Set defaults for backward compatibility
+  const gridSize = gameData.gridSize || 5;
+  const winCondition = gameData.winCondition || { type: 'lines', linesRequired: 1 };
+  
   await setDoc(doc(db, 'games', gameCode), {
     ...gameData,
     id: gameCode,
-    status: 'pending',           // ✅ CHANGED: New games start as pending
+    gridSize,
+    winCondition,
+    status: 'pending',
     createdAt: serverTimestamp(),
-    startedAt: null,             // ✅ ADDED: Track when game starts
-    startedBy: null              // ✅ ADDED: Track who started it
+    startedAt: null,
+    startedBy: null
   });
   
-  console.log('✅ Game created with status: pending');
+  console.log(`✅ Game created: ${gridSize}×${gridSize}, win: ${winCondition.type === 'blackout' ? 'blackout' : winCondition.linesRequired + ' lines'}`);
   return gameCode;
 };
 
 /**
  * Start a game (transition from pending to active)
- * @param {string} gameId - Game code
- * @param {string} adminId - Admin's Firebase UID
- * @returns {Promise<void>}
  */
 export const startGame = async (gameId, adminId) => {
   console.log('🚀 Starting game:', gameId);
   
-  // Verify game exists and is pending
   const gameSnap = await getDoc(doc(db, 'games', gameId));
   if (!gameSnap.exists()) {
     throw new Error('Game not found');
@@ -64,10 +61,8 @@ export const startGame = async (gameId, adminId) => {
   const gameData = gameSnap.data();
   if (gameData.status !== 'pending') {
     console.warn('⚠️ Game is not in pending state:', gameData.status);
-    // Don't throw error, just update anyway
   }
   
-  // Update to active
   await updateDoc(doc(db, 'games', gameId), {
     status: 'active',
     startedAt: serverTimestamp(),
@@ -79,8 +74,6 @@ export const startGame = async (gameId, adminId) => {
 
 /**
  * Load all games for a specific admin
- * @param {string} adminId - Firebase UID of the admin
- * @returns {Promise<Array>} Array of game objects
  */
 export const loadAdminGames = async (adminId) => {
   console.log('📂 Loading games for admin:', adminId);
@@ -91,7 +84,14 @@ export const loadAdminGames = async (adminId) => {
   
   const games = [];
   querySnapshot.forEach((doc) => {
-    games.push({ id: doc.id, ...doc.data() });
+    const data = doc.data();
+    // Add defaults for old games without gridSize
+    games.push({ 
+      id: doc.id, 
+      ...data,
+      gridSize: data.gridSize || 5,
+      winCondition: data.winCondition || { type: 'lines', linesRequired: 1 }
+    });
   });
   
   console.log('✅ Loaded games:', games.length);
@@ -100,16 +100,20 @@ export const loadAdminGames = async (adminId) => {
 
 /**
  * Get a specific game by ID
- * @param {string} gameId - Game code
- * @returns {Promise<Object|null>} Game data or null if not found
  */
 export const getGame = async (gameId) => {
   console.log('🔍 Fetching game:', gameId);
   const gameSnap = await getDoc(doc(db, 'games', gameId));
   
   if (gameSnap.exists()) {
+    const data = gameSnap.data();
     console.log('✅ Game found');
-    return gameSnap.data();
+    // Add defaults for backward compatibility
+    return {
+      ...data,
+      gridSize: data.gridSize || 5,
+      winCondition: data.winCondition || { type: 'lines', linesRequired: 1 }
+    };
   }
   
   console.log('❌ Game not found');
@@ -118,9 +122,6 @@ export const getGame = async (gameId) => {
 
 /**
  * Add a player to a game
- * @param {string} gameId - Game code
- * @param {Object} playerData - Player data object
- * @returns {Promise<void>}
  */
 export const addPlayerToGame = async (gameId, playerData) => {
   console.log('👤 Adding player to game:', gameId);
@@ -134,10 +135,6 @@ export const addPlayerToGame = async (gameId, playerData) => {
 
 /**
  * Update player progress in a game
- * @param {string} gameId - Game code
- * @param {string} playerId - Player ID
- * @param {Object} names - Filled squares {index: name}
- * @returns {Promise<void>}
  */
 export const updatePlayerProgress = async (gameId, playerId, names) => {
   console.log('💾 Updating player progress');
@@ -151,9 +148,6 @@ export const updatePlayerProgress = async (gameId, playerId, names) => {
 
 /**
  * Remove a player from a game
- * @param {string} gameId - Game code
- * @param {string} playerId - Player ID to remove
- * @returns {Promise<void>}
  */
 export const removePlayerFromGame = async (gameId, playerId) => {
   console.log('🗑️ Removing player from game');
@@ -174,10 +168,6 @@ export const removePlayerFromGame = async (gameId, playerId) => {
 
 /**
  * Update player's board (for generating new board)
- * @param {string} gameId - Game code
- * @param {string} playerId - Player ID
- * @param {Array} board - New board array
- * @returns {Promise<void>}
  */
 export const updatePlayerBoard = async (gameId, playerId, board) => {
   await updateDoc(doc(db, 'games', gameId), {
@@ -188,8 +178,6 @@ export const updatePlayerBoard = async (gameId, playerId, board) => {
 
 /**
  * End a game (blocks new players but preserves data)
- * @param {string} gameId - Game code
- * @returns {Promise<void>}
  */
 export const endGame = async (gameId) => {
   console.log('🔒 Ending game:', gameId);
@@ -204,8 +192,6 @@ export const endGame = async (gameId) => {
 
 /**
  * Delete a game permanently
- * @param {string} gameId - Game code
- * @returns {Promise<void>}
  */
 export const deleteGame = async (gameId) => {
   console.log('🗑️ Deleting game:', gameId);

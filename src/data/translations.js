@@ -113,7 +113,55 @@ export const translations = {
     readyToStart: "Ready to start!",
     readyToStartMessage: "{count} players are waiting. Click \"Start Game\" when everyone is ready.",
     cannotStartNoPlayers: "Cannot start game: No players have joined yet. Share the game code and wait for players to join.",
-    shareCodeToStart: "Share the game code with participants to get started"
+    shareCodeToStart: "Share the game code with participants to get started",
+
+// Grid Size Selection
+    selectGridSize: "Select Grid Size",
+    grid3x3: "3×3 (9 squares)",
+    grid3x3Desc: "Quick games, mobile-friendly",
+    grid4x4: "4×4 (16 squares)",
+    grid4x4Desc: "Balanced, works everywhere",
+    grid5x5: "5×5 (25 squares)",
+    grid5x5Desc: "Classic BINGO, best on desktop",
+    grid5x5Warning: "Mobile players may find this grid difficult to use. Consider 4×4 for groups with mobile users.",
+    recommended: "Recommended",
+    gridSize: "Grid Size",
+    
+    // Win Conditions
+    winCondition: "Win Condition",
+    line: "line",
+    lines: "lines",
+    easy: "Easy",
+    medium: "Medium",
+    hard: "Hard",
+    veryHard: "Very Hard",
+    blackout: "Full Board (Blackout)",
+    fullBoard: "Full Board",
+    squares: "squares",
+    blackoutDesc: "Fill all squares on the board",
+    oneLineDesc: "Complete any single row, column, or diagonal",
+    multipleLinesDesc: "Complete {count} different rows, columns, or diagonals",
+    
+    // Game Preview
+    gamePreview: "Game Preview",
+    totalSquares: "Total squares",
+    toWin: "To win",
+    fillAllSquares: "Fill all squares",
+    estimatedTime: "Est. time",
+    howToWin: "How to win",
+    
+    gameConfiguration: "Game Configuration",
+    progress: "Progress",
+    needToWin: "Need",
+    allSquares: "All squares",
+    grid5x5MobileWarning: "This 5×5 grid works best on desktop or tablet",
+    squaresFilled: "Squares",
+    linesCompleted: "Lines",
+    goalReached: "Goal reached!",
+
+    // Player Info
+    gridInfo: "Grid",
+    winRequirement: "Win"
   },
   no: {
     appTitle: "Icebreaker Bingo",
@@ -222,6 +270,54 @@ export const translations = {
     readyToStart: "Klar til å starte!",
     readyToStartMessage: "{count} spillere venter. Klikk \"Start spill\" når alle er klare.",
     cannotStartNoPlayers: "Kan ikke starte spillet: Ingen spillere har blitt med ennå. Del spillkoden og vent på at spillere blir med.",
-    shareCodeToStart: "Del spillkoden med deltakerne for å komme i gang"
+    shareCodeToStart: "Del spillkoden med deltakerne for å komme i gang",
+
+    // Grid Size Selection
+    selectGridSize: "Velg rutenettstørrelse",
+    grid3x3: "3×3 (9 ruter)",
+    grid3x3Desc: "Raske spill, mobilv vennlig",
+    grid4x4: "4×4 (16 ruter)",
+    grid4x4Desc: "Balansert, fungerer overalt",
+    grid5x5: "5×5 (25 ruter)",
+    grid5x5Desc: "Klassisk BINGO, best på datamaskin",
+    grid5x5Warning: "Mobilspillere kan finne dette rutenettet vanskelig å bruke. Vurder 4×4 for grupper med mobilbrukere.",
+    recommended: "Anbefalt",
+    gridSize: "Rutenettstørrelse",
+    
+    // Win Conditions
+    winCondition: "Vinnerbetingelse",
+    line: "linje",
+    lines: "linjer",
+    easy: "Lett",
+    medium: "Middels",
+    hard: "Vanskelig",
+    veryHard: "Veldig vanskelig",
+    blackout: "Helt brett (Blackout)",
+    fullBoard: "Helt brett",
+    squares: "ruter",
+    blackoutDesc: "Fyll alle rutene på brettet",
+    oneLineDesc: "Fullfør en enkelt rad, kolonne eller diagonal",
+    multipleLinesDesc: "Fullfør {count} forskjellige rader, kolonner eller diagonaler",
+    
+    // Game Preview
+    gamePreview: "Spillforhåndsvisning",
+    totalSquares: "Totalt antall ruter",
+    toWin: "For å vinne",
+    fillAllSquares: "Fyll alle ruter",
+    estimatedTime: "Est. tid",
+    howToWin: "Hvordan vinne",
+
+    gameConfiguration: "Spillkonfigurasjon",
+    progress: "Fremdrift",
+    needToWin: "Trenger",
+    allSquares: "Alle ruter",
+    grid5x5MobileWarning: "Dette 5×5 rutenettet fungerer best på datamaskin eller nettbrett",
+    squaresFilled: "Ruter",
+    linesCompleted: "Linjer",
+    goalReached: "Mål nådd!",
+    
+    // Player Info
+    gridInfo: "Rutenett",
+    winRequirement: "Vinn"
   }
 };

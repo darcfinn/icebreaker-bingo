@@ -43,15 +43,14 @@ const AdminGameView = ({
   const handleStartGameClick = () => {
     // Validation: No players
     if (playerCount === 0) {
-      alert(transText.cannotStartNoPlayers);
+      alert(transText.cannotStartNoPlayers || 'Cannot start game: No players have joined yet. Share the game code and wait for players to join.');
       return;
     }
 
     // Warning: Only 1-2 players
     if (playerCount <= 2) {
-      const warningMsg = language === 'en'
-        ? `Warning: Only ${playerCount} player${playerCount === 1 ? '' : 's'} ${playerCount === 1 ? 'has' : 'have'} joined. The game will be very difficult to complete with so few players. Do you want to start anyway?`
-        : `Advarsel: Bare ${playerCount} spiller${playerCount === 1 ? '' : 'e'} har blitt med. Spillet vil være veldig vanskelig å fullføre med så få spillere. Vil du starte likevel?`;
+      const warningMsg = transText.startGameFewPlayersWarning || 
+        `Warning: Only ${playerCount} player(s) have joined. The game will be very difficult to complete with so few players. Do you want to start anyway?`;
       
       if (!window.confirm(warningMsg)) {
         return;
@@ -68,7 +67,7 @@ const AdminGameView = ({
         {/* Header */}
         <div className="bg-white rounded-lg shadow-xl p-6 mb-6">
           <div className="flex justify-between items-center mb-4">
-            <div>
+            <div className="flex-1">
               <div className="flex items-center gap-3 mb-2">
                 <h1 className="text-3xl font-bold text-indigo-600">{currentGame.name}</h1>
                 <GameStatusBadge 
@@ -77,13 +76,54 @@ const AdminGameView = ({
                   language={language} 
                 />
               </div>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-600 mb-3">
                 {transText.gameCode}: <span className="font-mono font-bold text-indigo-600">{currentGameId}</span>
               </p>
-              <p className="text-sm text-gray-500 mt-1">
-                {playerCount} {playerCount === 1 ? (transText.player || 'player') : (transText.players || 'players')} • {transText.language}: {currentGame.language === 'en' ? 'English' : 'Norsk'}
-              </p>
+              
+              {/* NEW: Game Configuration Details */}
+              <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-4 inline-block">
+                <div className="flex flex-wrap gap-4 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-600">{transText.gridSize || 'Grid'}:</span>
+                    <span className="font-bold text-indigo-900">
+                      {currentGame.gridSize || 5}×{currentGame.gridSize || 5}
+                    </span>
+                    <span className="text-gray-500">
+                      ({(currentGame.gridSize || 5) * (currentGame.gridSize || 5)} {transText.squares || 'squares'})
+                    </span>
+                  </div>
+                  
+                  <span className="text-gray-400">•</span>
+                  
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-600">{transText.toWin || 'To win'}:</span>
+                    <span className="font-bold text-indigo-900">
+                      {currentGame.winCondition?.type === 'blackout'
+                        ? (transText.fullBoard || 'Full Board')
+                        : `${currentGame.winCondition?.linesRequired || 1} ${(currentGame.winCondition?.linesRequired || 1) === 1 ? transText.line : transText.lines}`
+                      }
+                    </span>
+                  </div>
+                  
+                  <span className="text-gray-400">•</span>
+                  
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-600">{transText.language || 'Language'}:</span>
+                    <span className="font-bold text-indigo-900">
+                      {currentGame.language === 'en' ? 'English' : 'Norsk'}
+                    </span>
+                  </div>
+                  
+                  <span className="text-gray-400">•</span>
+                  
+                  <div className="flex items-center gap-2">
+                    <span className="text-gray-600">{transText.players}:</span>
+                    <span className="font-bold text-indigo-900">{playerCount}</span>
+                  </div>
+                </div>
+              </div>
             </div>
+            
             <div className="flex gap-3 flex-wrap justify-end">
               {/* START GAME BUTTON */}
               {currentGame.status === 'pending' && (
@@ -123,57 +163,49 @@ const AdminGameView = ({
           </div>
 
           {/* Warning banner for pending games with no/few players */}
-            {currentGame.status === 'pending' && (
-              <div className="mt-4">
-                {playerCount === 0 && (
-                  <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 flex items-start gap-3">
-                    <span className="text-2xl">⚠️</span>
-                    <div>
-                      <p className="font-semibold text-red-800">
-                        {language === 'en' ? 'No players yet' : 'Ingen spillere ennå'}
-                      </p>
-                      <p className="text-sm text-red-700 mt-1">
-                        {transText.shareGameCode}
-                      </p>
-                    </div>
+          {currentGame.status === 'pending' && (
+            <div className="mt-4">
+              {playerCount === 0 && (
+                <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 flex items-start gap-3">
+                  <span className="text-2xl">⚠️</span>
+                  <div>
+                    <p className="font-semibold text-red-800">{transText.noPlayersYet || 'No players yet'}</p>
+                    <p className="text-sm text-red-700 mt-1">
+                      {transText.shareGameCode || 'Share the game code with participants. They need to join before you can start the game.'}
+                    </p>
                   </div>
-                )}
-                
-                {playerCount > 0 && playerCount <= 2 && (
-                  <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 flex items-start gap-3">
-                    <span className="text-2xl">⚠️</span>
-                    <div>
-                      <p className="font-semibold text-yellow-800">
-                        {transText.fewPlayers}
-                      </p>
-                      <p className="text-sm text-yellow-700 mt-1">
-                        {language === 'en' 
-                          ? `With only ${playerCount} player${playerCount === 1 ? '' : 's'}, completing the bingo will be very difficult. Consider waiting for more players to join.`
-                          : `Med bare ${playerCount} spiller${playerCount === 1 ? '' : 'e'} vil det være veldig vanskelig å fullføre bingoen. Vurder å vente på flere spillere.`
-                        }
-                      </p>
-                    </div>
+                </div>
+              )}
+              
+              {playerCount > 0 && playerCount <= 2 && (
+                <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 flex items-start gap-3">
+                  <span className="text-2xl">⚠️</span>
+                  <div>
+                    <p className="font-semibold text-yellow-800">
+                      {transText.fewPlayers || 'Few players'}
+                    </p>
+                    <p className="text-sm text-yellow-700 mt-1">
+                      {transText.fewPlayersMessage || 'With only ' + playerCount + ' player(s), completing the bingo will be very difficult. Consider waiting for more players to join.'}
+                    </p>
                   </div>
-                )}
+                </div>
+              )}
 
-                {playerCount >= 3 && (
-                  <div className="bg-green-50 border-2 border-green-300 rounded-lg p-4 flex items-start gap-3">
-                    <span className="text-2xl">✅</span>
-                    <div>
-                      <p className="font-semibold text-green-800">
-                        {transText.readyToStart}
-                      </p>
-                      <p className="text-sm text-green-700 mt-1">
-                        {language === 'en'
-                          ? `${playerCount} players are waiting. Click "Start Game" when everyone is ready.`
-                          : `${playerCount} spillere venter. Klikk "Start spill" når alle er klare.`
-                        }
-                      </p>
-                    </div>
+              {playerCount >= 3 && (
+                <div className="bg-green-50 border-2 border-green-300 rounded-lg p-4 flex items-start gap-3">
+                  <span className="text-2xl">✅</span>
+                  <div>
+                    <p className="font-semibold text-green-800">
+                      {transText.readyToStart || 'Ready to start!'}
+                    </p>
+                    <p className="text-sm text-green-700 mt-1">
+                      {transText.readyToStartMessage || `${playerCount} players are waiting. Click "Start Game" when everyone is ready.`}
+                    </p>
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Players List */}

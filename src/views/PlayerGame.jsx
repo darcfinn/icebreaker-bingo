@@ -15,6 +15,8 @@ const PlayerGame = ({
   gameStatus,
   gameName,
   playerCount,
+  gridSize = 5,
+  winCondition = { type: 'lines', linesRequired: 1 },
   onToggleSquare,
   onGenerateNewBoard,
   onLeaveGame
@@ -39,11 +41,59 @@ const PlayerGame = ({
         gameName={gameName}
         gameCode={currentGameId}
         playerCount={playerCount}
+        gridSize={gridSize}
+        winCondition={winCondition}
         language={language}
         translations={translations}
       />
     );
   }
+
+  // Calculate completed lines
+  const getCompletedLines = () => {
+    const filled = Object.keys(playerNames).map(k => parseInt(k));
+    let completedLines = 0;
+    
+    // Check rows
+    for (let row = 0; row < gridSize; row++) {
+      const rowCells = Array.from({ length: gridSize }, (_, col) => 
+        row * gridSize + col
+      );
+      if (rowCells.every(cell => filled.includes(cell))) {
+        completedLines++;
+      }
+    }
+    
+    // Check columns
+    for (let col = 0; col < gridSize; col++) {
+      const colCells = Array.from({ length: gridSize }, (_, row) => 
+        row * gridSize + col
+      );
+      if (colCells.every(cell => filled.includes(cell))) {
+        completedLines++;
+      }
+    }
+    
+    // Check diagonal (top-left to bottom-right)
+    const diag1 = Array.from({ length: gridSize }, (_, i) => 
+      i * gridSize + i
+    );
+    if (diag1.every(cell => filled.includes(cell))) {
+      completedLines++;
+    }
+    
+    // Check diagonal (top-right to bottom-left)
+    const diag2 = Array.from({ length: gridSize }, (_, i) => 
+      i * gridSize + (gridSize - 1 - i)
+    );
+    if (diag2.every(cell => filled.includes(cell))) {
+      completedLines++;
+    }
+    
+    return completedLines;
+  };
+
+  const completedLines = getCompletedLines();
 
   const handleInputChange = (index, value) => {
     // Just update the temporary value, don't validate yet
@@ -95,6 +145,33 @@ const PlayerGame = ({
     }
   };
 
+  // Responsive grid sizing
+  const getGridClasses = () => {
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+    
+    if (gridSize === 3) {
+      return {
+        container: 'gap-3 md:gap-4',
+        square: isMobile ? 'text-base' : 'text-lg',
+        input: 'h-11 text-base'
+      };
+    } else if (gridSize === 4) {
+      return {
+        container: 'gap-2 md:gap-3',
+        square: isMobile ? 'text-sm' : 'text-base',
+        input: 'h-10 text-sm'
+      };
+    } else { // 5×5
+      return {
+        container: 'gap-2 md:gap-3',
+        square: isMobile ? 'text-xs' : 'text-sm',
+        input: 'h-9 text-xs'
+      };
+    }
+  };
+
+  const gridClasses = getGridClasses();
+
   return (
     <>
       <style>{`
@@ -126,10 +203,23 @@ const PlayerGame = ({
                 <h1 className="text-3xl md:text-4xl font-bold text-indigo-600 mb-2">
                   {transText.appTitle}
                 </h1>
-                <p className="text-gray-600">{transText.subtitle}</p>
+                <p className="text-gray-600">{gameName || transText.subtitle}</p>
                 <p className="text-sm text-gray-500 mt-1">
                   {transText.playingAs}: <span className="font-semibold">{playerName}</span>
                 </p>
+                
+                {/* Game Configuration */}
+                <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
+                  <span className="bg-indigo-100 text-indigo-700 px-2 py-1 rounded font-semibold">
+                    {gridSize}×{gridSize}
+                  </span>
+                  <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded font-semibold">
+                    {winCondition?.type === 'blackout'
+                      ? (transText.fullBoard || 'Full Board')
+                      : `${winCondition?.linesRequired || 1} ${(winCondition?.linesRequired || 1) === 1 ? transText.line : transText.lines}`
+                    } {transText.toWin || 'to win'}
+                  </span>
+                </div>
               </div>
               <div className="flex gap-3">
                 <button
@@ -172,13 +262,19 @@ const PlayerGame = ({
           )}
 
           <div className="bg-white rounded-lg shadow-xl p-4 md:p-6">
-            <div className="grid grid-cols-5 gap-2 md:gap-3">
+            <div 
+              className={`grid ${gridClasses.container}`}
+              style={{
+                gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))`
+              }}
+            >
               {playerBoard.map((statement, index) => (
                 <div
                   key={index}
                   className={`
-                    aspect-square rounded-lg text-xs md:text-sm font-medium
+                    aspect-square rounded-lg font-medium
                     transition-all duration-200 border-2 p-2
+                    ${gridClasses.square}
                     ${playerNames[index] && !tempValues[index]
                       ? 'bg-indigo-600 border-indigo-700 shadow-lg'
                       : duplicateIndex === index
@@ -197,7 +293,7 @@ const PlayerGame = ({
                     onChange={(e) => handleInputChange(index, e.target.value)}
                     onBlur={(e) => handleInputBlur(index, e.target.value)}
                     placeholder="Name"
-                    className={`w-full px-1 py-0.5 text-xs text-center rounded focus:outline-none focus:ring-2 bg-white text-gray-900 ${
+                    className={`w-full px-1 py-0.5 text-center rounded focus:outline-none focus:ring-2 bg-white text-gray-900 ${gridClasses.input} ${
                       duplicateIndex === index 
                         ? 'border-2 border-red-500 focus:ring-red-500 animate-shake' 
                         : 'border border-gray-300 focus:ring-indigo-500'
@@ -208,8 +304,28 @@ const PlayerGame = ({
             </div>
           </div>
 
-          <div className="mt-6 text-center text-sm text-gray-600">
-            <p>{transText.filled}: {Object.keys(playerNames).length} / 25</p>
+          {/* Progress indicator */}
+          <div className="mt-6 flex justify-center gap-4">
+            {/* Squares Progress */}
+            <div className="inline-block bg-white rounded-lg shadow px-6 py-3">
+              <p className="text-sm text-gray-600 mb-1">{transText.squaresFilled || 'Squares'}</p>
+              <p className="text-2xl font-bold text-indigo-600">
+                {Object.keys(playerNames).length} / {gridSize * gridSize}
+              </p>
+            </div>
+            
+            {/* Lines Progress */}
+            {winCondition?.type !== 'blackout' && (
+              <div className="inline-block bg-white rounded-lg shadow px-6 py-3">
+                <p className="text-sm text-gray-600 mb-1">{transText.linesCompleted || 'Lines'}</p>
+                <p className={`text-2xl font-bold ${completedLines >= (winCondition?.linesRequired || 1) ? 'text-green-600' : 'text-orange-600'}`}>
+                  {completedLines} / {winCondition?.linesRequired || 1}
+                </p>
+                {completedLines >= (winCondition?.linesRequired || 1) && !hasWon && (
+                  <p className="text-xs text-green-600 font-semibold mt-1">✓ {transText.goalReached || 'Goal reached!'}</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>

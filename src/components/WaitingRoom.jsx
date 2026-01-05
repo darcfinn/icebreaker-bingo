@@ -12,6 +12,8 @@ const WaitingRoom = ({
   gameName,
   gameCode,
   playerCount,
+  gridSize = 5,        // NEW
+  winCondition = {},   // NEW
   language,
   translations 
 }) => {
@@ -65,9 +67,29 @@ const WaitingRoom = ({
               <p className="text-sm text-gray-600 mb-1">{transText.gameName}</p>
               <h2 className="text-2xl font-bold text-indigo-600">{gameName}</h2>
             </div>
-            <div className="text-center">
+            <div className="text-center mb-4">
               <p className="text-sm text-gray-600 mb-1">{transText.gameCode}</p>
               <p className="text-xl font-mono font-bold text-gray-800">{gameCode}</p>
+            </div>
+            
+            {/* NEW: Game Configuration */}
+            <div className="border-t border-indigo-200 pt-4 mt-4">
+              <p className="text-xs text-gray-600 mb-2 text-center">{transText.gameConfiguration || 'Game Settings'}</p>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="bg-white bg-opacity-60 rounded p-2 text-center">
+                  <p className="text-gray-600 text-xs">{transText.gridSize || 'Grid'}</p>
+                  <p className="font-bold text-indigo-900">{gridSize}×{gridSize}</p>
+                </div>
+                <div className="bg-white bg-opacity-60 rounded p-2 text-center">
+                  <p className="text-gray-600 text-xs">{transText.toWin || 'To Win'}</p>
+                  <p className="font-bold text-indigo-900">
+                    {winCondition?.type === 'blackout'
+                      ? (transText.fullBoard || 'Full')
+                      : `${winCondition?.linesRequired || 1} ${transText.lines || 'lines'}`
+                    }
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 

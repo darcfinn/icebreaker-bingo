@@ -143,13 +143,32 @@ const PlayerJoin = ({
               <div className="flex items-start gap-3">
                 <span className="text-2xl">ℹ️</span>
                 <div className="flex-1">
-                  <p className="font-semibold text-blue-900 mb-1">
+                  <p className="font-semibold text-blue-900 mb-2 text-lg">
                     {gameInfo.name}
                   </p>
-                  <div className="text-sm text-blue-800 space-y-1">
-                    <p>
-                      {transText.gameLanguage}: <strong>{gameInfo.language === 'en' ? 'English' : 'Norsk'}</strong>
-                    </p>
+                  <div className="text-sm text-blue-800 space-y-2">
+                    {/* Grid Configuration */}
+                    <div className="bg-white bg-opacity-60 rounded p-2">
+                      <p className="font-semibold mb-1">{transText.gameConfiguration || 'Game Configuration'}:</p>
+                      <div className="space-y-1 ml-2">
+                        <p>
+                          📐 {transText.gridSize || 'Grid'}: <strong>{gameInfo.gridSize || 5}×{gameInfo.gridSize || 5}</strong> ({(gameInfo.gridSize || 5) * (gameInfo.gridSize || 5)} {transText.squares || 'squares'})
+                        </p>
+                        <p>
+                          🏆 {transText.toWin || 'To win'}: <strong>
+                            {gameInfo.winCondition?.type === 'blackout' 
+                              ? (transText.fullBoard || 'Full Board')
+                              : `${gameInfo.winCondition?.linesRequired || 1} ${(gameInfo.winCondition?.linesRequired || 1) === 1 ? transText.line : transText.lines}`
+                            }
+                          </strong>
+                        </p>
+                        <p>
+                          🌐 {transText.gameLanguage}: <strong>{gameInfo.language === 'en' ? 'English' : 'Norsk'}</strong>
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {/* Game Status */}
                     <p>
                       {transText.status}: <strong>
                         {gameInfo.status === 'pending' 
@@ -163,12 +182,20 @@ const PlayerJoin = ({
                     <p>
                       {transText.players}: <strong>{Object.keys(gameInfo.players || {}).length}</strong>
                     </p>
+                    
+                    {gameInfo.status === 'ended' && (
+                      <p className="text-sm text-red-600 font-medium mt-2">
+                        ⚠️ {transText.gameHasEnded || 'This game has ended'}
+                      </p>
+                    )}
+                    
+                    {/* Mobile warning for 5×5 */}
+                    {gameInfo.gridSize === 5 && window.innerWidth < 640 && (
+                      <p className="text-orange-600 font-medium mt-2 pt-2 border-t border-orange-200">
+                        ⚠️ {transText.grid5x5MobileWarning || 'This 5×5 grid works best on desktop or tablet'}
+                      </p>
+                    )}
                   </div>
-                  {gameInfo.status === 'ended' && (
-                    <p className="text-sm text-red-600 font-medium mt-2">
-                      ⚠️ {transText.gameHasEnded || 'This game has ended'}
-                    </p>
-                  )}
                 </div>
               </div>
             </div>
